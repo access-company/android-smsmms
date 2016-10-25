@@ -47,6 +47,7 @@ import com.android.mms.MmsConfig;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
+import com.android.mms.util.StorageUtils;
 import com.google.android.mms.MmsException;
 import com.klinker.android.logger.Log;
 import android.widget.Toast;
@@ -296,6 +297,14 @@ public class TransactionService extends Service implements Observer {
                     if (count == 0) {
                         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                             Log.v(TAG, "onNewIntent: no pending messages. Stopping service.");
+                        }
+                        RetryScheduler.setRetryAlarm(this);
+                        stopSelfIfIdle(serviceId);
+                        return;
+                    }
+                    if (!StorageUtils.canSaveNewMessage()) {
+                        if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
+                            Log.v(TAG, "onNewIntent: no enough storage for saving messages. Stopping service.");
                         }
                         RetryScheduler.setRetryAlarm(this);
                         stopSelfIfIdle(serviceId);
@@ -844,6 +853,13 @@ public class TransactionService extends Service implements Observer {
                                 }
                                 break;
                             case Transaction.RETRIEVE_TRANSACTION:
+                                if (!StorageUtils.canSaveNewMessage()) {
+                                    if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
+                                        Log.v(TAG, "handle RETRIEVE_TRANSACTION: no enough storage for saving messages.");
+                                    }
+                                    break;
+                                }
+
                                 transaction = new RetrieveTransaction(
                                         TransactionService.this, serviceId,
                                         transactionSettings, args.getUri());
