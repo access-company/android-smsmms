@@ -306,7 +306,8 @@ public class TransactionService extends Service implements Observer {
                         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                             Log.v(TAG, "onNewIntent: no enough storage for saving messages. Stopping service.");
                         }
-                        RetryScheduler.setRetryAlarm(this);
+                        // can't stop service if call this method.
+                        // RetryScheduler.setRetryAlarm(this);
                         stopSelfIfIdle(serviceId);
                         return;
                     }
