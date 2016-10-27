@@ -41,6 +41,7 @@ import android.text.TextUtils;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
+import com.android.mms.util.StorageUtils;
 import com.klinker.android.logger.Log;
 
 import com.android.mms.LogTag;
@@ -167,6 +168,12 @@ public class PushReceiver extends BroadcastReceiver {
                                     !NotificationTransaction.allowAutoDownload(mContext),
                                     group,
                                     null);
+
+                            if (!StorageUtils.canSaveNewMessage()) {
+                                Log.v(TAG, "no enough storage for saving messages.");
+                                notifyStorageFull(mContext);
+                                return null;
+                            }
 
                             String location = getContentLocation(mContext, uri);
                             if (downloadedUrls.contains(location)) {
@@ -356,5 +363,9 @@ public class PushReceiver extends BroadcastReceiver {
             }
         }
         return false;
+    }
+
+    protected void notifyStorageFull(Context context) {
+        // override it in application
     }
 }
