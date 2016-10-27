@@ -599,6 +599,7 @@ public class Transaction {
             if (!TextUtils.isEmpty(httpParams)) {
                 configOverrides.putString(SmsManager.MMS_CONFIG_HTTP_PARAMS, httpParams);
             }
+            configOverrides.putInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, MmsConfig.getMaxMessageSize());
 
             if (contentUri != null) {
                 SmsManager.getDefault().sendMultimediaMessage(context,
