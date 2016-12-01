@@ -38,6 +38,10 @@ public class DownloadManager {
     }
 
     void downloadMultimediaMessage(final Context context, final String location) {
+        if (location == null) {
+            return;
+        }
+
         MmsDownloadReceiver receiver = mMap.get(location);
         if (receiver != null) {
             return;
