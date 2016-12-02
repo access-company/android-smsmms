@@ -205,7 +205,7 @@ public class Transaction {
                     body = settings.getPreText() + " " + body;
                 }
 
-                SmsManager smsManager = SmsManager.getDefault();
+                SmsManager smsManager = SmsManagerFactory.createSmsManager(settings);
                 Log.v("send_transaction", "found sms manager");
 
                 if (settings.getSplit()) {
@@ -602,7 +602,7 @@ public class Transaction {
             configOverrides.putInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, MmsConfig.getMaxMessageSize());
 
             if (contentUri != null) {
-                SmsManager.getDefault().sendMultimediaMessage(context,
+                SmsManagerFactory.createSmsManager(settings).sendMultimediaMessage(context,
                         contentUri, null, configOverrides, pendingIntent);
             } else {
                 Log.e(TAG, "Error writing sending Mms");
