@@ -7,8 +7,11 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.Cursor;
+import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
 
@@ -38,8 +41,13 @@ public class DownloadManager {
 
     }
 
-    void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
+    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
         if (location == null || mMap.get(location) != null) {
+            return;
+        }
+
+        // TransactionService can keep uri and location in memory while SmsManager download Mms.
+        if (!isNotificationExist(context, location)) {
             return;
         }
 
@@ -104,5 +112,25 @@ public class DownloadManager {
         if (location != null) {
             mMap.remove(location);
         }
+    }
+
+    private static boolean isNotificationExist(Context context, String location) {
+        String selection = Telephony.Mms.CONTENT_LOCATION + " = ?";
+        String[] selectionArgs = new String[] { location };
+        Cursor c = SqliteWrapper.query(
+                context, context.getContentResolver(),
+                Telephony.Mms.CONTENT_URI, new String[] { Telephony.Mms._ID },
+                selection, selectionArgs, null);
+        if (c != null) {
+            try {
+                if (c.getCount() == 1) {
+                    return true;
+                }
+            } finally {
+                c.close();
+            }
+        }
+
+        return false;
     }
 }
