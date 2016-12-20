@@ -11,6 +11,7 @@ import android.database.Cursor;
 import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
@@ -103,6 +104,10 @@ public class DownloadManager {
         @Override
         public void onReceive(Context context, Intent intent) {
             context.unregisterReceiver(this);
+
+            PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
+            PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MMS DownloadReceiver");
+            wakeLock.acquire(60 * 1000);
 
             Intent newIntent = (Intent) intent.clone();
             newIntent.setAction(MmsReceivedReceiver.MMS_RECEIVED);
