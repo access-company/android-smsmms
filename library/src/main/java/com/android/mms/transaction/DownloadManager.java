@@ -23,6 +23,7 @@ import java.io.File;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In order to avoid downloading duplicate MMS.
@@ -32,6 +33,7 @@ public class DownloadManager {
     private static final String TAG = "DownloadManager";
     private static DownloadManager ourInstance = new DownloadManager();
     private static final ConcurrentHashMap<String, MmsDownloadReceiver> mMap = new ConcurrentHashMap<>();
+    private static final AtomicInteger sMaxConnection = new AtomicInteger(5);
 
     public static DownloadManager getInstance() {
         return ourInstance;
@@ -41,8 +43,8 @@ public class DownloadManager {
 
     }
 
-    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
-        if (location == null || mMap.get(location) != null) {
+    void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
+        if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
             return;
         }
 
@@ -132,5 +134,9 @@ public class DownloadManager {
         }
 
         return false;
+    }
+
+    public static void setMaxConnection(int max) {
+        sMaxConnection.set(max);
     }
 }
