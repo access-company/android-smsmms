@@ -45,12 +45,23 @@ public class DownloadManager {
     }
 
     void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
-        if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
+        if (location == null) {
+            Log.v(TAG, "location is null");
+            return;
+        }
+
+        dumpCurrentConnection();
+        if (mMap.get(location) != null) {
+            Log.v(TAG, "mMap.get(" + location + ") not null");
+            return;
+        } else if (mMap.size() >= sMaxConnection.get()) {
+            Log.v(TAG, "mMap.size() " + mMap.size() + " >= sMaxConnection.get() " + sMaxConnection.get());
             return;
         }
 
         // TransactionService can keep uri and location in memory while SmsManager download Mms.
         if (!isNotificationExist(context, location)) {
+            Log.v(TAG, "location " + location + " is already received.");
             return;
         }
 
@@ -116,9 +127,12 @@ public class DownloadManager {
     }
 
     public static void finishDownload(String location) {
+        Log.v(TAG, "finishDownload( " + location + ")");
+
         if (location != null) {
             mMap.remove(location);
         }
+        dumpCurrentConnection();
     }
 
     private static boolean isNotificationExist(Context context, String location) {
@@ -143,5 +157,14 @@ public class DownloadManager {
 
     public static void setMaxConnection(int max) {
         sMaxConnection.set(max);
+    }
+
+    private static void dumpCurrentConnection() {
+        Log.v(TAG, "dumpCurrentConnection() start");
+
+        for (String key: mMap.keySet()) {
+            Log.v(TAG, "key: " + key);
+        }
+        Log.v(TAG, "dumpCurrentConnection() end");
     }
 }

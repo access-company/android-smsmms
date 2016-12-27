@@ -104,6 +104,8 @@ public class MmsReceivedService extends IntentService {
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError == 404 ||
                 httpError == 400) {
+            Log.e(TAG, "handleHttpError(" + httpError + ") delete corresponding NotificationInd: " + intent.getStringExtra(EXTRA_LOCATION_URL));
+
             // Delete the corresponding NotificationInd
             SqliteWrapper.delete(context,
                     context.getContentResolver(),
