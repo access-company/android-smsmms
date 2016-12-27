@@ -67,6 +67,7 @@ public class DownloadManager {
 
         MmsDownloadReceiver receiver = new MmsDownloadReceiver();
         mMap.put(location, receiver);
+        Log.v(TAG, "send download request: " + location);
 
         // Use unique action in order to avoid cancellation of notifying download result.
         context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
