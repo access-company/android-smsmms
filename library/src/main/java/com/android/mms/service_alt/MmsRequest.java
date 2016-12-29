@@ -255,7 +255,13 @@ public abstract class MmsRequest {
      * @param httpStatusCode The optional http status code in case of http failure
      */
     public void processResult(Context context, int result, byte[] response, int httpStatusCode) {
-        final Uri messageUri = persistIfRequired(context, result, response);
+        Uri messageUri;
+        try {
+            messageUri = persistIfRequired(context, result, response);
+        } catch (DownloadRequest.parsePDUException e) {
+            e.printStackTrace();
+            messageUri = null;
+        }
 
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
@@ -367,7 +373,7 @@ public abstract class MmsRequest {
      * @param response The response body
      * @return The persisted URI of the message or null if we don't persist or fail
      */
-    protected abstract Uri persistIfRequired(Context context, int result, byte[] response);
+    protected abstract Uri persistIfRequired(Context context, int result, byte[] response) throws DownloadRequest.parsePDUException;
 
     /**
      * Prepare to make the HTTP request - will download message for sending

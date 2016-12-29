@@ -105,7 +105,7 @@ public class DownloadRequest extends MmsRequest {
     }
 
     @Override
-    protected Uri persistIfRequired(Context context, int result, byte[] response) {
+    protected Uri persistIfRequired(Context context, int result, byte[] response) throws parsePDUException {
         if (!mRequestManager.getAutoPersistingPref()) {
             notifyOfDownload(context);
             return null;
@@ -115,7 +115,7 @@ public class DownloadRequest extends MmsRequest {
     }
 
     public static Uri persist(Context context, byte[] response, MmsConfig.Overridden mmsConfig,
-                              String locationUrl, int subId, String creator) {
+                              String locationUrl, int subId, String creator) throws parsePDUException {
         // Let any mms apps running as secondary user know that a new mms has been downloaded.
         notifyOfDownload(context);
 
@@ -143,7 +143,8 @@ public class DownloadRequest extends MmsRequest {
                     (new PduParser(response, mmsConfig.getSupportMmsContentDisposition())).parse();
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
                 Log.e(TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
-                return null;
+                // It can't parse multipart/signed
+                throw new parsePDUException();
             }
             final RetrieveConf retrieveConf = (RetrieveConf) pdu;
             final int status = retrieveConf.getRetrieveStatus();
@@ -320,5 +321,8 @@ public class DownloadRequest extends MmsRequest {
         }
 
         throw new MmsException("Cannot get X-Mms-Content-Location from: " + uri);
+    }
+
+    public static class parsePDUException extends Exception {
     }
 }

@@ -70,13 +70,19 @@ public class MmsReceivedService extends IntentService {
 
             CommonAsyncTask task = getNotificationTask(this, intent, response);
 
-            DownloadRequest.persist(this, response,
-                    new MmsConfig.Overridden(new MmsConfig(this), null),
-                    intent.getStringExtra(EXTRA_LOCATION_URL),
-                    Utils.getDefaultSubscriptionId(), null);
+            try {
+                DownloadRequest.persist(this, response,
+                        new MmsConfig.Overridden(new MmsConfig(this), null),
+                        intent.getStringExtra(EXTRA_LOCATION_URL),
+                        Utils.getDefaultSubscriptionId(), null);
+                Log.v(TAG, "response saved successfully");
+                Log.v(TAG, "response length: " + response.length);
+            } catch (DownloadRequest.parsePDUException e) {
+                e.printStackTrace();
+                Log.v(TAG, "response saved failure");
+                deleteNotificationInd(this, intent);
+            }
 
-            Log.v(TAG, "response saved successfully");
-            Log.v(TAG, "response length: " + response.length);
             mDownloadFile.delete();
 
             if (task != null) {
@@ -100,19 +106,23 @@ public class MmsReceivedService extends IntentService {
         }
     }
 
+    private static void deleteNotificationInd(Context context, Intent intent) {
+        SqliteWrapper.delete(context,
+                context.getContentResolver(),
+                Telephony.Mms.CONTENT_URI,
+                LOCATION_SELECTION,
+                new String[]{
+                        Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                        intent.getStringExtra(EXTRA_LOCATION_URL)
+                });
+    }
+
     private static void handleHttpError(Context context, Intent intent) {
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError == 404 ||
                 httpError == 400) {
             // Delete the corresponding NotificationInd
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            intent.getStringExtra(EXTRA_LOCATION_URL)
-                    });
+            deleteNotificationInd(context, intent);
         }
     }
 
