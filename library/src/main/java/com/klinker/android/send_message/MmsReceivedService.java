@@ -68,7 +68,8 @@ public class MmsReceivedService extends IntentService {
             final byte[] response = new byte[nBytes];
             reader.read(response, 0, nBytes);
 
-            CommonAsyncTask task = getNotificationTask(this, intent, response);
+            CommonNotificationTask task = getNotificationTask(this, intent, response);
+            executeNotificationTask(task);
 
             DownloadRequest.persist(this, response,
                     new MmsConfig.Overridden(new MmsConfig(this), null),
@@ -78,10 +79,6 @@ public class MmsReceivedService extends IntentService {
             Log.v(TAG, "response saved successfully");
             Log.v(TAG, "response length: " + response.length);
             mDownloadFile.delete();
-
-            if (task != null) {
-                task.run();
-            }
         } catch (FileNotFoundException e) {
             Log.e(TAG, "MMS received, file not found exception", e);
         } catch (IOException e) {
@@ -120,13 +117,13 @@ public class MmsReceivedService extends IntentService {
         return (NotificationInd) PduPersister.getPduPersister(context).load((Uri) intent.getParcelableExtra(EXTRA_URI));
     }
 
-    private static abstract class CommonAsyncTask implements Runnable {
+    private static abstract class CommonNotificationTask {
         protected final Context mContext;
         private final TransactionSettings mTransactionSettings;
         final NotificationInd mNotificationInd;
         final String mContentLocation;
 
-        CommonAsyncTask(Context context, TransactionSettings settings, NotificationInd ind) {
+        CommonNotificationTask(Context context, TransactionSettings settings, NotificationInd ind) {
             mContext = context;
             mTransactionSettings = settings;
             mNotificationInd = ind;
@@ -202,15 +199,17 @@ public class MmsReceivedService extends IntentService {
                     mTransactionSettings.getProxyAddress(),
                     mTransactionSettings.getProxyPort());
         }
+
+        public abstract void run() throws IOException;
     }
 
-    private static class NotifyRespTask extends CommonAsyncTask {
+    private static class NotifyRespTask extends CommonNotificationTask {
         NotifyRespTask(Context context, NotificationInd ind, TransactionSettings settings) {
             super(context, settings, ind);
         }
 
         @Override
-        public void run() {
+        public void run() throws IOException {
             // Create the M-NotifyResp.ind
             NotifyRespInd notifyRespInd = null;
             try {
@@ -227,13 +226,11 @@ public class MmsReceivedService extends IntentService {
                 }
             } catch (MmsException e) {
                 Log.e(TAG, "error", e);
-            } catch (IOException e) {
-                Log.e(TAG, "error", e);
             }
         }
     }
 
-    private static class AcknowledgeIndTask extends CommonAsyncTask {
+    private static class AcknowledgeIndTask extends CommonNotificationTask {
         private final RetrieveConf mRetrieveConf;
 
         AcknowledgeIndTask(Context context, NotificationInd ind, TransactionSettings settings, RetrieveConf rc) {
@@ -242,7 +239,7 @@ public class MmsReceivedService extends IntentService {
         }
 
         @Override
-        public void run() {
+        public void run() throws IOException {
             // Send M-Acknowledge.ind to MMSC if required.
             // If the Transaction-ID isn't set in the M-Retrieve.conf, it means
             // the MMS proxy-relay doesn't require an ACK.
@@ -268,14 +265,12 @@ public class MmsReceivedService extends IntentService {
                     Log.e(TAG, "error", e);
                 } catch (MmsException e) {
                     Log.e(TAG, "error", e);
-                } catch (IOException e) {
-                    Log.e(TAG, "error", e);
                 }
             }
         }
     }
 
-    private static CommonAsyncTask getNotificationTask(Context context, Intent intent, byte[] response) {
+    private static CommonNotificationTask getNotificationTask(Context context, Intent intent, byte[] response) {
         if (response.length == 0) {
             return null;
         }
@@ -299,6 +294,20 @@ public class MmsReceivedService extends IntentService {
         } catch (MmsException e) {
             Log.e(TAG, "error", e);
             return null;
+        }
+    }
+
+    private static void executeNotificationTask(CommonNotificationTask task) throws IOException {
+        if (task == null) {
+            return;
+        }
+
+        try {
+            // need retry ?
+            task.run();
+        } catch (IOException e) {
+            Log.e(TAG, "MMS send received notification, io exception", e);
+            throw e;
         }
     }
 }
