@@ -10,6 +10,7 @@ import android.content.IntentFilter;
 import android.database.Cursor;
 import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Telephony;
@@ -44,7 +45,7 @@ public class DownloadManager {
 
     }
 
-    void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
+    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
         if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
             return;
         }
@@ -122,6 +123,10 @@ public class DownloadManager {
     }
 
     private static boolean isNotificationExist(Context context, String location) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return true;
+        }
+
         String selection = Telephony.Mms.CONTENT_LOCATION + " = ?";
         String[] selectionArgs = new String[] { location };
         Cursor c = SqliteWrapper.query(

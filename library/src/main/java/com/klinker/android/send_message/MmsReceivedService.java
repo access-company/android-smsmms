@@ -5,6 +5,7 @@ import android.app.IntentService;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 
@@ -98,6 +99,10 @@ public class MmsReceivedService extends IntentService {
     }
 
     private static void handleHttpError(Context context, Intent intent) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError == 404 ||
                 httpError == 400) {
