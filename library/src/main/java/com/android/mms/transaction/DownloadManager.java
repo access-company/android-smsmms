@@ -10,7 +10,7 @@ import android.content.IntentFilter;
 import android.database.Cursor;
 import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
-import android.os.Build;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Telephony;
@@ -22,6 +22,7 @@ import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.MmsReceivedReceiver;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +37,8 @@ public class DownloadManager {
     private static DownloadManager ourInstance = new DownloadManager();
     private static final ConcurrentHashMap<String, MmsDownloadReceiver> mMap = new ConcurrentHashMap<>();
     private static final AtomicInteger sMaxConnection = new AtomicInteger(5);
+    // Stock of information that is used in delayed download if it becomes usable.
+    private static ArrayList<DownloadInfo> sDelayedDownloadInfoList = new ArrayList<>();
 
     public static DownloadManager getInstance() {
         return ourInstance;
@@ -45,8 +48,13 @@ public class DownloadManager {
 
     }
 
-    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
-        if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
+    void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
+        if (location == null || mMap.get(location) != null) {
+            return;
+        } else if (mMap.size() >= sMaxConnection.get()) {
+            // Stock information for delayed download
+            DownloadInfo downloadInfo = new DownloadInfo(location, uri, byPush);
+            sDelayedDownloadInfoList.add(downloadInfo);
             return;
         }
 
@@ -122,11 +130,20 @@ public class DownloadManager {
         }
     }
 
-    private static boolean isNotificationExist(Context context, String location) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            return true;
-        }
+    public static void finishDownload(Context context, String location) {
+        finishDownload(location);
+        downloadIfDelayed(context);
+    }
 
+    private static void downloadIfDelayed(Context context) {
+        if (sDelayedDownloadInfoList.size() > 0) {
+            DownloadInfo downloadInfo = sDelayedDownloadInfoList.get(0);
+            new DownloadMultimediaMessageTask(context, downloadInfo).execute();
+            sDelayedDownloadInfoList.remove(0);
+        }
+    }
+
+    private static boolean isNotificationExist(Context context, String location) {
         String selection = Telephony.Mms.CONTENT_LOCATION + " = ?";
         String[] selectionArgs = new String[] { location };
         Cursor c = SqliteWrapper.query(
@@ -148,5 +165,34 @@ public class DownloadManager {
 
     public static void setMaxConnection(int max) {
         sMaxConnection.set(max);
+    }
+
+    private class DownloadInfo {
+        String mLocation;
+        Uri mUri;
+        boolean mByPush;
+
+        private DownloadInfo(String location, Uri uri, boolean byPush) {
+            mLocation = location;
+            mUri = uri;
+            mByPush = byPush;
+        }
+    }
+
+    private static class DownloadMultimediaMessageTask extends AsyncTask<Void, Void, Void> {
+
+        private Context mContext;
+        private DownloadInfo mDownloadInfo;
+
+        public DownloadMultimediaMessageTask(Context context, DownloadInfo downloadInfo) {
+            mContext = context;
+            mDownloadInfo = downloadInfo;
+        }
+
+        @Override
+        protected Void doInBackground(Void... params) {
+            getInstance().downloadMultimediaMessage(mContext, mDownloadInfo.mLocation, mDownloadInfo.mUri, mDownloadInfo.mByPush);
+            return null;
+        }
     }
 }
