@@ -20,6 +20,7 @@ import android.graphics.Bitmap;
 import com.klinker.android.logger.Log;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -294,7 +295,17 @@ public class Message {
      * @param audio is the single audio sample to send to recipient
      */
     public void addAudio(byte[] audio) {
-        addMedia(audio, "audio/wav");
+        addAudio(audio, null);
+    }
+
+    /**
+     * Sets audio file.  Must be in wav format.
+     *
+     * @param audio is the single audio sample to send to recipient
+     * @param name is the name of the file
+     */
+    public void addAudio(byte[] audio, String name) {
+        addMedia(audio, "audio/wav", name);
     }
 
     /**
@@ -313,7 +324,17 @@ public class Message {
      * @param video is the single video sample to send to recipient
      */
     public void addVideo(byte[] video) {
-        addMedia(video, "video/3gpp");
+        addVideo(video, null);
+    }
+
+    /**
+     * Adds video file
+     *
+     * @param video is the single video sample to send to recipient
+     * @param name is the name of the video file
+     */
+    public void addVideo(byte[] video, String name) {
+        addMedia(video, "video/3gpp", name);
     }
 
     /**
@@ -335,6 +356,17 @@ public class Message {
      */
     public void addMedia(byte[] media, String mimeType) {
         this.parts.add(new Part(media, mimeType, null));
+    }
+
+    /**
+     * Adds other media
+     *
+     * @param media is the media you want to send
+     * @param mimeType is the mimetype of the media
+     * @param name is the name of the file
+     */
+    public void addMedia(byte[] media, String mimeType, String name) {
+        this.parts.add(new Part(media, mimeType, name));
     }
 
     /**
@@ -486,13 +518,20 @@ public class Message {
      * @return a byte array of the image data
      */
     public static byte[] bitmapToByteArray(Bitmap image) {
+		byte[] output = new byte[0];
         if (image == null) {
             Log.v("Message", "image is null, returning byte array of size 0");
-            return new byte[0];
+            return output;
         }
-
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        image.compress(Bitmap.CompressFormat.JPEG, 90, stream);
-        return stream.toByteArray();
+		ByteArrayOutputStream stream = new ByteArrayOutputStream();
+		try {
+			image.compress(Bitmap.CompressFormat.JPEG, 90, stream);
+			output = stream.toByteArray();
+		} finally {
+			try {
+				stream.close();
+			} catch (IOException e) {}
+		}
+		return output;
     }
 }
