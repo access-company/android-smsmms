@@ -38,6 +38,7 @@ public class MmsSentReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        android.util.Log.e("__sms__", "MmsSentReceiver#OnReceive() [start] intent={" + getExtras(intent) + "}");
         Log.v(TAG, "MMS has finished sending, marking it as so in the database");
 
         Uri uri = Uri.parse(intent.getStringExtra(EXTRA_CONTENT_URI));
@@ -51,6 +52,24 @@ public class MmsSentReceiver extends BroadcastReceiver {
         String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
         Log.v(TAG, filePath);
         new File(filePath).delete();
+        android.util.Log.e("__sms__", "MmsSentReceiver#OnReceive() [end]");
     }
 
+    public static String getExtras(Intent intent) {
+        if (intent == null) {
+            return "Intent==null";
+        }
+
+        StringBuilder result = new StringBuilder();
+
+        result.append("EXTRA_CONTENT_URI=\"");
+        result.append(intent.getStringExtra(EXTRA_CONTENT_URI));
+        result.append("\", ");
+
+        result.append("EXTRA_FILE_PATH=\"");
+        result.append(intent.getStringExtra(EXTRA_FILE_PATH));
+        result.append("\", ");
+
+        return result.toString();
+    }
 }
