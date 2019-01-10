@@ -4,6 +4,9 @@ package com.klinker.android.send_message;
 import android.app.IntentService;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Telephony;
@@ -98,8 +101,30 @@ public class MmsReceivedService extends IntentService {
         }
     }
 
+    private static boolean isWifiActive(Context context) {
+        ConnectivityManager connectivityManager = (ConnectivityManager) context
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        Network[] networks = connectivityManager.getAllNetworks();
+        if (networks != null) {
+            for (Network net: networks) {
+                NetworkInfo info = connectivityManager.getNetworkInfo(net);
+                if (ConnectivityManager.TYPE_WIFI == info.getType() && info.isConnected()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static void handleHttpError(Context context, Intent intent) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+
+        if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
+            // Sometimes MMS can not be acquired if Wifi is enabled.
+            // For example, if you are playing Youtube in the foreground.
             return;
         }
 
