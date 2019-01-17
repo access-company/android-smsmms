@@ -16,6 +16,7 @@ import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsConfig;
 import com.android.mms.transaction.DownloadManager;
 import com.android.mms.transaction.HttpUtils;
+import com.android.mms.transaction.RetryScheduler;
 import com.android.mms.transaction.TransactionSettings;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.InvalidHeaderValueException;
@@ -129,17 +130,9 @@ public class MmsReceivedService extends IntentService {
         }
 
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
-        if (/* httpError == 404 || */
-                httpError == 400) {
-            // Delete the corresponding NotificationInd
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            intent.getStringExtra(EXTRA_LOCATION_URL)
-                    });
+        if (httpError != 200) {
+            Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
 

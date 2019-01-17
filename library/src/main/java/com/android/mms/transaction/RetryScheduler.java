@@ -101,7 +101,7 @@ public class RetryScheduler implements Observer {
         }
     }
 
-    private void scheduleRetry(Uri uri) {
+    public void scheduleRetry(Uri uri) {
         long msgId = ContentUris.parseId(uri);
 
         Uri.Builder uriBuilder = PendingMessages.CONTENT_URI.buildUpon();
