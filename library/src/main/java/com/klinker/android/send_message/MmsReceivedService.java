@@ -76,6 +76,8 @@ public class MmsReceivedService extends IntentService {
             CommonNotificationTask task = getNotificationTask(this, intent, response);
             executeNotificationTask(task);
 
+            notifyReceiveComplete(intent);
+
             DownloadRequest.persist(this, response,
                     new MmsConfig.Overridden(new MmsConfig(this), null),
                     intent.getStringExtra(EXTRA_LOCATION_URL),
@@ -101,6 +103,8 @@ public class MmsReceivedService extends IntentService {
             DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
         }
     }
+
+    protected void notifyReceiveComplete(Intent intent){}
 
     private static boolean isWifiActive(Context context) {
         ConnectivityManager connectivityManager = (ConnectivityManager) context

@@ -30,29 +30,39 @@ public class DefaultRetryScheme extends AbstractRetryScheme {
     private static final boolean DEBUG = false;
     private static final boolean LOCAL_LOGV = DEBUG ? Config.LOGD : Config.LOGV;
 
-    private static final int[] sDefaultRetryScheme = {
+    private static int[] sDefaultRetryScheme = {
         0, 1 * 60 * 1000, 5 * 60 * 1000, 10 * 60 * 1000, 30 * 60 * 1000};
+
+    private synchronized static int[] getRetryScheme() {
+        return sDefaultRetryScheme.clone();
+    }
+
+    public synchronized static void setRetryScheme(int[] scheme){
+        sDefaultRetryScheme = scheme;
+    }
+
+    private final int[] mRetryScheme = getRetryScheme();
 
     public DefaultRetryScheme(Context context, int retriedTimes) {
         super(retriedTimes);
 
         mRetriedTimes = mRetriedTimes < 0 ? 0 : mRetriedTimes;
-        mRetriedTimes = mRetriedTimes >= sDefaultRetryScheme.length
-                ? sDefaultRetryScheme.length - 1 : mRetriedTimes;
+        mRetriedTimes = mRetriedTimes >= mRetryScheme.length
+                ? mRetryScheme.length - 1 : mRetriedTimes;
 
         // TODO Get retry scheme from preference.
     }
 
     @Override
     public int getRetryLimit() {
-        return sDefaultRetryScheme.length;
+        return mRetryScheme.length;
     }
 
     @Override
     public long getWaitingInterval() {
         if (LOCAL_LOGV) {
-            Log.v(TAG, "Next int: " + sDefaultRetryScheme[mRetriedTimes]);
+            Log.v(TAG, "Next int: " + mRetryScheme[mRetriedTimes]);
         }
-        return sDefaultRetryScheme[mRetriedTimes];
+        return mRetryScheme[mRetriedTimes];
     }
 }
