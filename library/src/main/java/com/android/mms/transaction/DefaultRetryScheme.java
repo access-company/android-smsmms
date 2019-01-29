@@ -38,7 +38,7 @@ public class DefaultRetryScheme extends AbstractRetryScheme {
     }
 
     public synchronized static void setRetryScheme(int[] scheme){
-        sDefaultRetryScheme = scheme;
+        sDefaultRetryScheme = scheme.clone();
     }
 
     private final int[] mRetryScheme = getRetryScheme();

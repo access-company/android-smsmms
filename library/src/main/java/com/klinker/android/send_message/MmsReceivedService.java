@@ -30,7 +30,6 @@ import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduParser;
 import com.google.android.mms.pdu_alt.PduPersister;
 import com.google.android.mms.pdu_alt.RetrieveConf;
-import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 
 import java.io.File;
@@ -76,7 +75,7 @@ public class MmsReceivedService extends IntentService {
             CommonNotificationTask task = getNotificationTask(this, intent, response);
             executeNotificationTask(task);
 
-            notifyReceiveComplete(intent);
+            notifyReceiveCompleted(intent);
 
             DownloadRequest.persist(this, response,
                     new MmsConfig.Overridden(new MmsConfig(this), null),
@@ -104,7 +103,7 @@ public class MmsReceivedService extends IntentService {
         }
     }
 
-    protected void notifyReceiveComplete(Intent intent){}
+    protected void notifyReceiveCompleted(Intent intent){}
 
     private static boolean isWifiActive(Context context) {
         ConnectivityManager connectivityManager = (ConnectivityManager) context
