@@ -87,8 +87,10 @@ public class MmsReceivedService extends IntentService {
             mDownloadFile.delete();
         } catch (FileNotFoundException e) {
             Log.e(TAG, "MMS received, file not found exception", e);
+            notifyReceiveFailed(intent, e);
         } catch (IOException e) {
             Log.e(TAG, "MMS received, io exception", e);
+            notifyReceiveFailed(intent, e);
         } finally {
             if (reader != null) {
                 try {
@@ -104,6 +106,8 @@ public class MmsReceivedService extends IntentService {
     }
 
     protected void notifyReceiveCompleted(Intent intent){}
+
+    protected void notifyReceiveFailed(Intent intent, Exception e){}
 
     private static boolean isWifiActive(Context context) {
         ConnectivityManager connectivityManager = (ConnectivityManager) context
