@@ -4,6 +4,9 @@ package com.klinker.android.send_message;
 import android.app.IntentService;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Telephony;
@@ -13,6 +16,7 @@ import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsConfig;
 import com.android.mms.transaction.DownloadManager;
 import com.android.mms.transaction.HttpUtils;
+import com.android.mms.transaction.RetryScheduler;
 import com.android.mms.transaction.TransactionSettings;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.InvalidHeaderValueException;
@@ -26,7 +30,6 @@ import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduParser;
 import com.google.android.mms.pdu_alt.PduPersister;
 import com.google.android.mms.pdu_alt.RetrieveConf;
-import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 
 import java.io.File;
@@ -72,6 +75,8 @@ public class MmsReceivedService extends IntentService {
             CommonNotificationTask task = getNotificationTask(this, intent, response);
             executeNotificationTask(task);
 
+            notifyReceiveCompleted(intent);
+
             DownloadRequest.persist(this, response,
                     new MmsConfig.Overridden(new MmsConfig(this), null),
                     intent.getStringExtra(EXTRA_LOCATION_URL),
@@ -98,23 +103,39 @@ public class MmsReceivedService extends IntentService {
         }
     }
 
+    protected void notifyReceiveCompleted(Intent intent){}
+
+    private static boolean isWifiActive(Context context) {
+        ConnectivityManager connectivityManager = (ConnectivityManager) context
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        Network[] networks = connectivityManager.getAllNetworks();
+        if (networks != null) {
+            for (Network net: networks) {
+                NetworkInfo info = connectivityManager.getNetworkInfo(net);
+                if (ConnectivityManager.TYPE_WIFI == info.getType() && info.isConnected()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static void handleHttpError(Context context, Intent intent) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
             return;
         }
 
+        if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
+            // Sometimes MMS can not be acquired if Wifi is enabled.
+            // For example, if you are playing Youtube in the foreground.
+            return;
+        }
+
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
-        if (httpError == 404 ||
-                httpError == 400) {
-            // Delete the corresponding NotificationInd
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            intent.getStringExtra(EXTRA_LOCATION_URL)
-                    });
+        if (httpError != 200) {
+            Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
 
