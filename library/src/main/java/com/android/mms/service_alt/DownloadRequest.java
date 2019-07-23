@@ -33,6 +33,7 @@ import android.provider.Telephony;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.access_company.android.mms.MmsLogger;
 import com.android.mms.service_alt.exception.MmsHttpException;
 
 import com.google.android.mms.MmsException;
@@ -125,6 +126,7 @@ public class DownloadRequest extends MmsRequest {
 
         Log.d(TAG, "DownloadRequest.persistIfRequired");
         if (response == null || response.length < 1) {
+            MmsLogger.w("DownloadRequest#persist(): empty response, update the retrieve status location=" + locationUrl);
             Log.e(TAG, "DownloadRequest.persistIfRequired: empty response");
             // Update the retrieve status of the NotificationInd
             final ContentValues values = new ContentValues(1);
@@ -146,6 +148,7 @@ public class DownloadRequest extends MmsRequest {
             final GenericPdu pdu =
                     (new PduParser(response, mmsConfig.getSupportMmsContentDisposition())).parse();
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
+                MmsLogger.w("DownloadRequest#persist(): PDU is not RetrieveConf/cannot parse PDU location=" + locationUrl);
                 Log.e(TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
 
                 // Update the error type of the NotificationInd
@@ -181,6 +184,7 @@ public class DownloadRequest extends MmsRequest {
                     true/*groupMmsEnabled*/,
                     null/*preOpenedFiles*/);
             if (messageUri == null) {
+                MmsLogger.w("DownloadRequest#persist(): can not persist message location=" + locationUrl);
                 Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message");
                 return null;
             }
@@ -198,6 +202,7 @@ public class DownloadRequest extends MmsRequest {
                 values.put(Telephony.Mms.SUBSCRIPTION_ID, subId);
             }
 
+            MmsLogger.i("DownloadRequest#persist(): store the downloaded message messageUri=" + messageUri + ", location=" + locationUrl);
             if (SqliteWrapper.update(
                     context,
                     context.getContentResolver(),
@@ -205,6 +210,7 @@ public class DownloadRequest extends MmsRequest {
                     values,
                     null/*where*/,
                     null/*selectionArg*/) != 1) {
+                MmsLogger.w("DownloadRequest#persist(): can not update message messageUri=" + messageUri + ", location=" + locationUrl);
                 Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message");
             }
             // Delete the corresponding NotificationInd
@@ -216,13 +222,17 @@ public class DownloadRequest extends MmsRequest {
                             Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
                             locationUrl
                     });
+            MmsLogger.i("DownloadRequest#persist(): deleted corresponding NotificationInd messageUri=" + messageUri + ", location=" + locationUrl);
 
             return messageUri;
         } catch (MmsException e) {
+            MmsLogger.w("DownloadRequest#persist(): location=" + locationUrl, e);
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
         } catch (SQLiteException e) {
+            MmsLogger.w("DownloadRequest#persist(): location=" + locationUrl, e);
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message", e);
         } catch (RuntimeException e) {
+            MmsLogger.w("DownloadRequest#persist(): location=" + locationUrl, e);
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not parse response", e);
         } finally {
             Binder.restoreCallingIdentity(identity);

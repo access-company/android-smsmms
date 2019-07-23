@@ -717,4 +717,59 @@ public class PduHeaders {
         }
         mHeaderMap.put(field, value);
     }
+
+    public static String convertMessageType(int messageType) {
+        switch (messageType) {
+            case MESSAGE_TYPE_SEND_REQ:
+                return "MESSAGE_TYPE_SEND_REQ";
+            case MESSAGE_TYPE_SEND_CONF:
+                return "MESSAGE_TYPE_SEND_CONF";
+            case MESSAGE_TYPE_NOTIFICATION_IND:
+                return "MESSAGE_TYPE_NOTIFICATION_IND";
+            case MESSAGE_TYPE_NOTIFYRESP_IND:
+                return "MESSAGE_TYPE_NOTIFYRESP_IND";
+            case MESSAGE_TYPE_RETRIEVE_CONF:
+                return "MESSAGE_TYPE_RETRIEVE_CONF";
+            case MESSAGE_TYPE_ACKNOWLEDGE_IND:
+                return "MESSAGE_TYPE_ACKNOWLEDGE_IND";
+            case MESSAGE_TYPE_DELIVERY_IND:
+                return "MESSAGE_TYPE_DELIVERY_IND";
+            case MESSAGE_TYPE_READ_REC_IND:
+                return "MESSAGE_TYPE_READ_REC_IND";
+            case MESSAGE_TYPE_READ_ORIG_IND:
+                return "MESSAGE_TYPE_READ_ORIG_IND";
+            case MESSAGE_TYPE_FORWARD_REQ:
+                return "MESSAGE_TYPE_FORWARD_REQ";
+            case MESSAGE_TYPE_FORWARD_CONF:
+                return "MESSAGE_TYPE_FORWARD_CONF";
+            case MESSAGE_TYPE_MBOX_STORE_REQ:
+                return "MESSAGE_TYPE_MBOX_STORE_REQ";
+            case MESSAGE_TYPE_MBOX_STORE_CONF:
+                return "MESSAGE_TYPE_MBOX_STORE_CONF";
+            case MESSAGE_TYPE_MBOX_VIEW_REQ:
+                return "MESSAGE_TYPE_MBOX_VIEW_REQ";
+            case MESSAGE_TYPE_MBOX_VIEW_CONF:
+                return "MESSAGE_TYPE_MBOX_VIEW_CONF";
+            case MESSAGE_TYPE_MBOX_UPLOAD_REQ:
+                return "MESSAGE_TYPE_MBOX_UPLOAD_REQ";
+            case MESSAGE_TYPE_MBOX_UPLOAD_CONF:
+                return "MESSAGE_TYPE_MBOX_UPLOAD_CONF";
+            case MESSAGE_TYPE_MBOX_DELETE_REQ:
+                return "MESSAGE_TYPE_MBOX_DELETE_REQ";
+            case MESSAGE_TYPE_MBOX_DELETE_CONF:
+                return "MESSAGE_TYPE_MBOX_DELETE_CONF";
+            case MESSAGE_TYPE_MBOX_DESCR:
+                return "MESSAGE_TYPE_MBOX_DESCR";
+            case MESSAGE_TYPE_DELETE_REQ:
+                return "MESSAGE_TYPE_DELETE_REQ";
+            case MESSAGE_TYPE_DELETE_CONF:
+                return "MESSAGE_TYPE_DELETE_CONF";
+            case MESSAGE_TYPE_CANCEL_REQ:
+                return "MESSAGE_TYPE_CANCEL_REQ";
+            case MESSAGE_TYPE_CANCEL_CONF:
+                return "MESSAGE_TYPE_CANCEL_CONF";
+            default:
+                return "";
+        }
+    }
 }

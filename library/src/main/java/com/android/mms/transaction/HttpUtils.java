@@ -40,6 +40,8 @@ import android.net.http.AndroidHttpClient;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Config;
+
+import com.access_company.android.mms.MmsLogger;
 import com.klinker.android.logger.Log;
 
 import com.android.mms.logs.LogTag;
@@ -93,6 +95,22 @@ public class HttpUtils {
     public static byte[] httpConnection(Context context, long token,
             String url, byte[] pdu, int method, boolean isProxySet,
             String proxyHost, int proxyPort) throws IOException {
+
+        MmsLogger.i(String.format("httpConnection() params:\n" +
+                        "\ttoken\t\t= %s\n" +
+                        "\turl\t\t= %s\n" +
+                        "\tmethod\t\t= %s\n" +
+                        "\tisProxySet\t= %s\n" +
+                        "\tproxyHost\t= %s\n" +
+                        "\tproxyPort\t= %s",
+                token,
+                url,
+                (method == HTTP_POST_METHOD ? "POST" : (method == HTTP_GET_METHOD ? "GET" : "UNKNOWN")),
+                isProxySet,
+                proxyHost,
+                proxyPort
+        ));
+
         if (url == null) {
             throw new IllegalArgumentException("URL must not be null.");
         }

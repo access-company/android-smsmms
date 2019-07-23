@@ -33,8 +33,9 @@ import android.preference.PreferenceManager;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.Mms.Inbox;
 
-import com.android.mms.logs.LogTag;
+import com.access_company.android.mms.MmsLogger;
 import com.android.mms.MmsConfig;
+import com.android.mms.logs.LogTag;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
@@ -94,6 +95,7 @@ public class PushReceiver extends BroadcastReceiver {
         protected Void doInBackground(Intent... intents) {
             Log.v(TAG, "receiving a new mms message");
             Intent intent = intents[0];
+            MmsLogger.i("ReceivePushTask [start] action=" + intent.getAction() + ", type=" + intent.getType());
 
             // Get raw PDU push-data from the message and parse it
             byte[] pushData = intent.getByteArrayExtra("data");
@@ -102,6 +104,7 @@ public class PushReceiver extends BroadcastReceiver {
 
             if (null == pdu) {
                 Log.e(TAG, "Invalid PUSH data");
+                MmsLogger.w("ReceivePushTask [end] invalid push data");
                 return null;
             }
 
@@ -135,6 +138,7 @@ public class PushReceiver extends BroadcastReceiver {
                         ContentValues values = new ContentValues(1);
                         values.put(Mms.THREAD_ID, threadId);
                         SqliteWrapper.update(mContext, cr, uri, values, null, null);
+                        MmsLogger.i("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " update MMS DB: uri=" + uri + ", threadId=" + threadId + ", groupMmsEnabled=" + group);
                         break;
                     }
                     case MESSAGE_TYPE_NOTIFICATION_IND: {
@@ -174,6 +178,7 @@ public class PushReceiver extends BroadcastReceiver {
                             String location = getContentLocation(mContext, uri);
                             if (downloadedUrls.contains(location)) {
                                 Log.v(TAG, "already added this download, don't download again");
+                                MmsLogger.w("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " already added this download, don't download again: uri=" + uri + ", groupMmsEnabled=" + group);
                                 return null;
                             } else {
                                 downloadedUrls.add(location);
@@ -192,9 +197,11 @@ public class PushReceiver extends BroadcastReceiver {
                                 }
 
                                 if (useSystem) {
+                                    MmsLogger.i("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " downloaded by system: uri=" + uri + ", location=" + location);
                                     DownloadManager.getInstance().downloadMultimediaMessage(mContext, location, uri, true);
                                 } else {
                                     Log.v(TAG, "receiving with lollipop method");
+                                    MmsLogger.i("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " downloaded with lollipop method: uri=" + uri + ", location=" + location);
                                     MmsRequestManager requestManager = new MmsRequestManager(mContext);
                                     DownloadRequest request = new DownloadRequest(requestManager,
                                             Utils.getDefaultSubscriptionId(),
@@ -225,21 +232,26 @@ public class PushReceiver extends BroadcastReceiver {
                         } else if (LOCAL_LOGV) {
                             Log.v(TAG, "Skip downloading duplicate message: "
                                     + new String(nInd.getContentLocation()));
+                            MmsLogger.w("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " skip downloading duplicate message: contentLocation=" + new String(nInd.getContentLocation()));
                         }
                         break;
                     }
                     default:
                         Log.e(TAG, "Received unrecognized PDU.");
+                        MmsLogger.w("ReceivePushTask type=" + PduHeaders.convertMessageType(type)+" unrecognized PDU");
                 }
             } catch (MmsException e) {
                 Log.e(TAG, "Failed to save the data from PUSH: type=" + type, e);
+                MmsLogger.w("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " Failed to save the data from PUSH", e);
             } catch (RuntimeException e) {
                 Log.e(TAG, "Unexpected RuntimeException.", e);
+                MmsLogger.w("ReceivePushTask type=" + PduHeaders.convertMessageType(type) + " Unexpected RuntimeException", e);
             }
 
             if (LOCAL_LOGV) {
                 Log.v(TAG, "PUSH Intent processed.");
             }
+            MmsLogger.i("ReceivePushTask [end]");
 
             return null;
         }
@@ -254,6 +266,7 @@ public class PushReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        MmsLogger.i("PushReceiver#onReceive() action=" + intent.getAction() + ", type=" + intent.getType());
         Log.v(TAG, intent.getAction() + " " + intent.getType());
         if ((intent.getAction().equals(WAP_PUSH_DELIVER_ACTION) || intent.getAction().equals(WAP_PUSH_RECEIVED_ACTION))
                 && ContentType.MMS_MESSAGE.equals(intent.getType())) {
@@ -265,6 +278,7 @@ public class PushReceiver extends BroadcastReceiver {
             if ((!sharedPrefs.getBoolean("receive_with_stock", false) && Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT && sharedPrefs.getBoolean("override", true))
                     || Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 MmsConfig.init(context);
+                MmsLogger.d("PushReceiver#onReceive() execute ReceivePushTask");
                 new ReceivePushTask(context, null).executeOnExecutor(PUSH_RECEIVER_EXECUTOR, intent);
 
                 Log.v("mms_receiver", context.getPackageName() + " received and aborted");

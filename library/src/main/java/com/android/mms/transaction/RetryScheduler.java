@@ -32,6 +32,7 @@ import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
 import android.provider.Telephony.MmsSms.PendingMessages;
 
+import com.access_company.android.mms.MmsLogger;
 import com.android.mms.logs.LogTag;
 import com.android.mms.util.DownloadManager;
 import com.google.android.mms.pdu_alt.PduHeaders;
@@ -75,6 +76,7 @@ public class RetryScheduler implements Observer {
             if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                 Log.v(TAG, "[RetryScheduler] update " + observable);
             }
+            MmsLogger.d("RetryScheduler#update() transaction=" + t + ", state=" + (t != null ? t.getState() : "null"));
 
             // We are only supposed to handle M-Notification.ind, M-Send.req
             // and M-ReadRec.ind.
@@ -87,7 +89,10 @@ public class RetryScheduler implements Observer {
                     if (state.getState() == TransactionState.FAILED) {
                         Uri uri = state.getContentUri();
                         if (uri != null) {
+                            MmsLogger.d("RetryScheduler#update() schedule retry: transaction=" + t + ", state=" + t.getState() + ", uri=" + state.getContentUri());
                             scheduleRetry(uri);
+                        } else {
+                            MmsLogger.i("RetryScheduler#update() transaction state is failed, but uri is null: schedule retry transaction=" + t + ", state=" + t.getState() + ", uri=" + state.getContentUri());
                         }
                     }
                 } finally {
@@ -96,12 +101,16 @@ public class RetryScheduler implements Observer {
             }
         } finally {
             if (isConnected()) {
+                MmsLogger.d("RetryScheduler#update() set retry alarm");
                 setRetryAlarm(mContext);
+            } else {
+                MmsLogger.d("RetryScheduler#update() try to set retry alarm, but is not connected.");
             }
         }
     }
 
     public void scheduleRetry(Uri uri) {
+        MmsLogger.i("RetryScheduler#scheduleRetry() uri=" + uri);
         long msgId = ContentUris.parseId(uri);
 
         Uri.Builder uriBuilder = PendingMessages.CONTENT_URI.buildUpon();
@@ -119,6 +128,7 @@ public class RetryScheduler implements Observer {
 
                     int retryIndex = cursor.getInt(cursor.getColumnIndexOrThrow(
                             PendingMessages.RETRY_INDEX)) + 1; // Count this time.
+                    MmsLogger.i("RetryScheduler#scheduleRetry() uri=" + uri + ", retryIndex=" + retryIndex);
 
                     // TODO Should exactly understand what was happened.
                     int errorType = MmsSms.ERR_TYPE_GENERIC;
@@ -151,6 +161,7 @@ public class RetryScheduler implements Observer {
                                 break;
                         }
                         if (errorString != 0) {
+                            MmsLogger.w("RetryScheduler#scheduleRetry() msgType is not M-Notification.Ind. Do not retry: uri=" + uri + ", respStatus=" + respStatus + ", error=" + errorString);
                             DownloadManager.init(mContext.getApplicationContext());
                             DownloadManager.getInstance().showErrorCodeToast(errorString);
                             retry = false;
@@ -161,6 +172,7 @@ public class RetryScheduler implements Observer {
                         respStatus = getRetrieveStatus(msgId);
                         if (respStatus ==
                                 PduHeaders.RESPONSE_STATUS_ERROR_PERMANENT_MESSAGE_NOT_FOUND) {
+                            MmsLogger.w("RetryScheduler#scheduleRetry() Retrieve Invalid Message(expired or not available). Do not retry: uri=" + uri + ", respStatus=" + respStatus);
                             DownloadManager.init(mContext.getApplicationContext());
                             DownloadManager.getInstance().showErrorCodeToast(
                                     R.string.service_message_not_found);
@@ -172,6 +184,7 @@ public class RetryScheduler implements Observer {
                     }
                     if ((retryIndex < scheme.getRetryLimit()) && retry) {
                         long retryAt = current + scheme.getWaitingInterval();
+                        MmsLogger.i("RetryScheduler#scheduleRetry() uri=" + uri + ", waitingInterval=" + scheme.getWaitingInterval() + ", isRetryDownloading=" + isRetryDownloading);
 
                         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                             Log.v(TAG, "scheduleRetry: retry for " + uri + " is scheduled at "
@@ -188,6 +201,7 @@ public class RetryScheduler implements Observer {
                         }
                     } else {
                         errorType = MmsSms.ERR_TYPE_GENERIC_PERMANENT;
+                        MmsLogger.i("RetryScheduler#scheduleRetry() permanent error. Do not retry: uri=" + uri + ", isRetryDownloading=" + isRetryDownloading);
                         if (isRetryDownloading) {
                             Cursor c = SqliteWrapper.query(mContext, mContext.getContentResolver(), uri,
                                     new String[] { Mms.THREAD_ID }, null, null, null);
@@ -232,6 +246,7 @@ public class RetryScheduler implements Observer {
                             PendingMessages.CONTENT_URI,
                             values, PendingMessages._ID + "=" + id, null);
                 } else if (LOCAL_LOGV) {
+                    MmsLogger.i("RetryScheduler#scheduleRetry() Cannot found correct pending status: uri=" + uri);
                     Log.v(TAG, "Cannot found correct pending status for: " + msgId);
                 }
             } finally {
@@ -307,6 +322,7 @@ public class RetryScheduler implements Observer {
     }
 
     public static void setRetryAlarm(Context context) {
+        MmsLogger.d("RetryScheduler#setRetryAlarm()");
         Cursor cursor = PduPersister.getPduPersister(context).getPendingMessages(
                 Long.MAX_VALUE);
         if (cursor != null) {
@@ -328,10 +344,15 @@ public class RetryScheduler implements Observer {
                         Log.v(TAG, "Next retry is scheduled at"
                                 + (retryAt - System.currentTimeMillis()) + "ms from now");
                     }
+                    MmsLogger.i("RetryScheduler#setRetryAlarm() Next retry is scheduled at" + (retryAt - System.currentTimeMillis()) + "ms from now");
+                } else {
+                    MmsLogger.i("RetryScheduler#setRetryAlarm() cannot move to first: cursor.getCount()=" + cursor.getCount());
                 }
             } finally {
                 cursor.close();
             }
+        } else {
+            MmsLogger.i("RetryScheduler#setRetryAlarm() cursor==null");
         }
     }
 }

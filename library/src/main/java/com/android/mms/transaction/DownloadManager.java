@@ -17,6 +17,7 @@ import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
 
+import com.access_company.android.mms.MmsLogger;
 import com.android.mms.MmsConfig;
 import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.BroadcastUtils;
@@ -47,12 +48,23 @@ public class DownloadManager {
     }
 
     public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
-        if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
+        MmsLogger.d("downloadMultiMediaMessage() [start] uri=" + uri + ", location=" + location + ", byPush=" + byPush);
+        if (location == null) {
+            MmsLogger.w("downloadMultiMediaMessage() [end] location is null");
+            return;
+        }
+        if (mMap.get(location) != null) {
+            MmsLogger.w("downloadMultiMediaMessage() [end] location is already exists in mMap");
+            return;
+        }
+        if (mMap.size() >= sMaxConnection.get()) {
+            MmsLogger.w("downloadMultiMediaMessage() [end] size of mMap has exceeded the max connections. mMap.size=" + mMap.size() + ", sMaxConnetion=" + sMaxConnection.get());
             return;
         }
 
         // TransactionService can keep uri and location in memory while SmsManager download Mms.
         if (!isNotificationExist(context, location)) {
+            MmsLogger.w("downloadMultiMediaMessage() [end] notification is not exists");
             return;
         }
 
@@ -85,8 +97,10 @@ public class DownloadManager {
         }
 
         grantUriPermission(context, contentUri);
+        MmsLogger.i("downloadMultiMediaMessage() start download uri=" + uri + ", location=" + location + ", byPush=" + byPush + ", contentUri=" + contentUri + ", filePath=" + mDownloadFile.getPath());
         SmsManager.getDefault().downloadMultimediaMessage(context,
                 location, contentUri, configOverrides, pendingIntent);
+        MmsLogger.d("downloadMultiMediaMessage() [end]");
     }
 
     private void grantUriPermission(Context context, Uri contentUri) {
@@ -110,14 +124,17 @@ public class DownloadManager {
             PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
             PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MMS DownloadReceiver");
             wakeLock.acquire(60 * 1000);
+            MmsLogger.d("MmsDownloadReceiver#onReceive() acquire WakeLock for 60000ms");
 
             Intent newIntent = (Intent) intent.clone();
             newIntent.setAction(MmsReceivedReceiver.MMS_RECEIVED);
+            MmsLogger.i("MmsDownloadReceiver#onReceive() broadcast " + MmsReceivedReceiver.MMS_RECEIVED + " action: uri=" + intent.getParcelableExtra(MmsReceivedReceiver.EXTRA_URI) + ", location=" + intent.getStringExtra(MmsReceivedReceiver.EXTRA_LOCATION_URL));
             BroadcastUtils.sendExplicitBroadcast(context, newIntent, MmsReceivedReceiver.MMS_RECEIVED);
         }
     }
 
     public static void finishDownload(String location) {
+        MmsLogger.d("finishDownload() location=" + location);
         if (location != null) {
             mMap.remove(location);
         }

@@ -12,6 +12,7 @@ import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 
+import com.access_company.android.mms.MmsLogger;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsConfig;
 import com.android.mms.transaction.DownloadManager;
@@ -59,6 +60,11 @@ public class MmsReceivedService extends IntentService {
 
     @Override
     protected void onHandleIntent(Intent intent) {
+        MmsLogger.i(String.format("MmsReceivedService#onHandleIntent() MMS has finished downloading, persisting it to the database uri=%s, location=%s, byPush=%s, filePath=%s",
+                intent.getParcelableExtra(MmsReceivedReceiver.EXTRA_URI),
+                intent.getStringExtra(EXTRA_LOCATION_URL),
+                intent.getBooleanExtra(MmsReceivedReceiver.EXTRA_TRIGGER_PUSH, false),
+                intent.getStringExtra(EXTRA_FILE_PATH)));
         Log.v(TAG, "MMS has finished downloading, persisting it to the database");
 
         String path = intent.getStringExtra(EXTRA_FILE_PATH);
@@ -73,21 +79,26 @@ public class MmsReceivedService extends IntentService {
             reader.read(response, 0, nBytes);
 
             CommonNotificationTask task = getNotificationTask(this, intent, response);
+            MmsLogger.d("MmsReceivedService#onHandleIntent() task=" + task.toString());
             executeNotificationTask(task);
 
             notifyReceiveCompleted(intent);
 
+            MmsLogger.d(String.format("MmsReceivedService#onHandleIntent() start persist filePath=%s, length=%d", path, response.length));
             DownloadRequest.persist(this, response,
                     new MmsConfig.Overridden(new MmsConfig(this), null),
                     intent.getStringExtra(EXTRA_LOCATION_URL),
                     Utils.getDefaultSubscriptionId(), null);
 
+            MmsLogger.d(String.format("MmsReceivedService#onHandleIntent() response saved successfully filePath=%s, length=%d", path, response.length));
             Log.v(TAG, "response saved successfully");
             Log.v(TAG, "response length: " + response.length);
             mDownloadFile.delete();
         } catch (FileNotFoundException e) {
+            MmsLogger.d("MmsReceivedService#onHandleIntent() file not found exception", e);
             Log.e(TAG, "MMS received, file not found exception", e);
         } catch (IOException e) {
+            MmsLogger.d("MmsReceivedService#onHandleIntent() io exception", e);
             Log.e(TAG, "MMS received, io exception", e);
         } finally {
             if (reader != null) {
@@ -123,18 +134,21 @@ public class MmsReceivedService extends IntentService {
 
     private static void handleHttpError(Context context, Intent intent) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            MmsLogger.d("MmsReceivedService#handleHttpError() Current sdk version is less than KitKat");
             return;
         }
 
         if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
             // Sometimes MMS can not be acquired if Wifi is enabled.
             // For example, if you are playing Youtube in the foreground.
+            MmsLogger.d("MmsReceivedService#handleHttpError() Wi-Fi is enabled");
             return;
         }
 
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError != 200) {
             Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            MmsLogger.i("MmsReceivedService#handleHttpError() Schedule retry uri=" + uri + ", httpError=" + httpError);
             RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
@@ -201,14 +215,17 @@ public class MmsReceivedService extends IntentService {
         private byte[] sendPdu(final long token, final byte[] pdu,
                                final String mmscUrl) throws IOException, MmsException {
             if (pdu == null) {
+                MmsLogger.d("sendPdu() pdu is null");
                 throw new MmsException();
             }
 
             if (mmscUrl == null) {
+                MmsLogger.d("sendPdu() mmscUrl is null");
                 throw new IOException("Cannot establish route: mmscUrl is null");
             }
 
             if (com.android.mms.transaction.Transaction.useWifi(mContext)) {
+                MmsLogger.d("send PDU with Wi-Fi");
                 return HttpUtils.httpConnection(
                         mContext, token,
                         mmscUrl,
@@ -219,6 +236,7 @@ public class MmsReceivedService extends IntentService {
             return Utils.ensureRouteToMmsNetwork(mContext, mmscUrl, mTransactionSettings.getProxyAddress(), new Utils.Task<byte[]>() {
                 @Override
                 public byte[] run() throws IOException {
+                    MmsLogger.d("send PDU");
                     return HttpUtils.httpConnection(
                             mContext, token,
                             mmscUrl,
@@ -240,6 +258,7 @@ public class MmsReceivedService extends IntentService {
 
         @Override
         public void run() throws IOException {
+            MmsLogger.d("NotifyRespTask [start]");
             // Create the M-NotifyResp.ind
             NotifyRespInd notifyRespInd = null;
             try {
@@ -251,12 +270,16 @@ public class MmsReceivedService extends IntentService {
                 // Pack M-NotifyResp.ind and send it
                 if(com.android.mms.MmsConfig.getNotifyWapMMSC()) {
                     sendPdu(new PduComposer(mContext, notifyRespInd).make(), mContentLocation);
+                    MmsLogger.i("NotifyRespTask sent M-NotifyResp.ind to content location: location=" + mContentLocation);
                 } else {
                     sendPdu(new PduComposer(mContext, notifyRespInd).make());
+                    MmsLogger.i("NotifyRespTask sent M-NotifyResp.ind to MMSC: location=" + mContentLocation);
                 }
             } catch (MmsException e) {
+                MmsLogger.w("NotifyRespTask MMSException", e);
                 Log.e(TAG, "error", e);
             }
+            MmsLogger.d("NotifyRespTask [end]");
         }
     }
 
@@ -270,6 +293,7 @@ public class MmsReceivedService extends IntentService {
 
         @Override
         public void run() throws IOException {
+            MmsLogger.d("AcknowledgeIndTask [start]");
             // Send M-Acknowledge.ind to MMSC if required.
             // If the Transaction-ID isn't set in the M-Retrieve.conf, it means
             // the MMS proxy-relay doesn't require an ACK.
@@ -288,20 +312,26 @@ public class MmsReceivedService extends IntentService {
                     // Pack M-Acknowledge.ind and send it
                     if(com.android.mms.MmsConfig.getNotifyWapMMSC()) {
                         sendPdu(new PduComposer(mContext, acknowledgeInd).make(), mContentLocation);
+                        MmsLogger.i("AcknowledgeIndTask sent M-Acknowledge.ind to content location: location=" + mContentLocation);
                     } else {
                         sendPdu(new PduComposer(mContext, acknowledgeInd).make());
+                        MmsLogger.i("AcknowledgeIndTask sent M-Acknowledge.ind to MMSC: location=" + mContentLocation);
                     }
                 } catch (InvalidHeaderValueException e) {
+                    MmsLogger.w("AcknowledgeIndTask InvalidHeaderValueException", e);
                     Log.e(TAG, "error", e);
                 } catch (MmsException e) {
+                    MmsLogger.w("AcknowledgeIndTask MMSException", e);
                     Log.e(TAG, "error", e);
                 }
             }
+            MmsLogger.d("AcknowledgeIndTask [end]");
         }
     }
 
     private static CommonNotificationTask getNotificationTask(Context context, Intent intent, byte[] response) {
         if (response.length == 0) {
+            MmsLogger.i("MmsReceivedService#getNotificationTask() response is blank");
             return null;
         }
 
@@ -310,6 +340,7 @@ public class MmsReceivedService extends IntentService {
                         getSupportMmsContentDisposition())).parse();
         if (pdu == null || !(pdu instanceof RetrieveConf)) {
             android.util.Log.e(TAG, "MmsReceivedReceiver.sendNotification failed to parse pdu");
+            MmsLogger.i("MmsReceivedService#getNotificationTask() failed to parse pdu");
             return null;
         }
 
@@ -322,6 +353,7 @@ public class MmsReceivedService extends IntentService {
                 return new AcknowledgeIndTask(context, ind, transactionSettings, (RetrieveConf) pdu);
             }
         } catch (MmsException e) {
+            MmsLogger.w("MmsReceivedService#getNotificationTask() MMSException", e);
             Log.e(TAG, "error", e);
             return null;
         }
@@ -329,6 +361,7 @@ public class MmsReceivedService extends IntentService {
 
     private static void executeNotificationTask(CommonNotificationTask task) throws IOException {
         if (task == null) {
+            MmsLogger.d("MmsReceivedService#executeNotificationTask() Task is null");
             return;
         }
 
@@ -336,6 +369,7 @@ public class MmsReceivedService extends IntentService {
             // need retry ?
             task.run();
         } catch (IOException e) {
+            MmsLogger.w("MmsReceivedService#executeNotificationTask() MMS send received notification, io exception", e);
             Log.e(TAG, "MMS send received notification, io exception", e);
             throw e;
         }
