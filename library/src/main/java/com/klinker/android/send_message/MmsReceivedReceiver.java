@@ -19,8 +19,12 @@ package com.klinker.android.send_message;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 
@@ -28,6 +32,7 @@ import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsConfig;
 import com.android.mms.transaction.DownloadManager;
 import com.android.mms.transaction.HttpUtils;
+import com.android.mms.transaction.RetryScheduler;
 import com.android.mms.transaction.TransactionSettings;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.InvalidHeaderValueException;
@@ -41,7 +46,6 @@ import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduParser;
 import com.google.android.mms.pdu_alt.PduPersister;
 import com.google.android.mms.pdu_alt.RetrieveConf;
-import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 
 import java.io.File;
@@ -83,6 +87,11 @@ public class MmsReceivedReceiver extends BroadcastReceiver {
             reader.read(response, 0, nBytes);
 
             CommonAsyncTask task = getNotificationTask(context, intent, response);
+            if (task != null) {
+                task.executeOnExecutor(RECEIVE_NOTIFICATION_EXECUTOR);
+            }
+
+            notifyReceiveCompleted(intent);
 
             DownloadRequest.persist(context, response,
                     new MmsConfig.Overridden(new MmsConfig(context), null),
@@ -92,10 +101,6 @@ public class MmsReceivedReceiver extends BroadcastReceiver {
             Log.v(TAG, "response saved successfully");
             Log.v(TAG, "response length: " + response.length);
             mDownloadFile.delete();
-
-            if (task != null) {
-                task.executeOnExecutor(RECEIVE_NOTIFICATION_EXECUTOR);
-            }
         } catch (FileNotFoundException e) {
             Log.e(TAG, "MMS received, file not found exception", e);
         } catch (IOException e) {
@@ -114,19 +119,39 @@ public class MmsReceivedReceiver extends BroadcastReceiver {
         DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
     }
 
+    protected void notifyReceiveCompleted(Intent intent){}
+
+    private static boolean isWifiActive(Context context) {
+        ConnectivityManager connectivityManager = (ConnectivityManager) context
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        Network[] networks = connectivityManager.getAllNetworks();
+        if (networks != null) {
+            for (Network net: networks) {
+                NetworkInfo info = connectivityManager.getNetworkInfo(net);
+                if (ConnectivityManager.TYPE_WIFI == info.getType() && info.isConnected()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private void handleHttpError(Context context, Intent intent) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+
+        if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
+            // Sometimes MMS can not be acquired if Wifi is enabled.
+            // For example, if you are playing Youtube in the foreground.
+            return;
+        }
+
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
-        if (httpError == 404 ||
-                httpError == 400) {
-            // Delete the corresponding NotificationInd
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            intent.getStringExtra(EXTRA_LOCATION_URL)
-                    });
+        if (httpError != 200) {
+            Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
 
@@ -189,8 +214,8 @@ public class MmsReceivedReceiver extends BroadcastReceiver {
          *         an HTTP error code(>=400) returned from the server.
          * @throws com.google.android.mms.MmsException if pdu is null.
          */
-        private byte[] sendPdu(long token, byte[] pdu,
-                       String mmscUrl) throws IOException, MmsException {
+        private byte[] sendPdu(final long token, final byte[] pdu,
+                       final String mmscUrl) throws IOException, MmsException {
             if (pdu == null) {
                 throw new MmsException();
             }
@@ -207,14 +232,18 @@ public class MmsReceivedReceiver extends BroadcastReceiver {
                         false, null, 0);
             }
 
-            Utils.ensureRouteToHost(mContext, mmscUrl, mTransactionSettings.getProxyAddress());
-            return HttpUtils.httpConnection(
-                    mContext, token,
-                    mmscUrl,
-                    pdu, HttpUtils.HTTP_POST_METHOD,
-                    mTransactionSettings.isProxySet(),
-                    mTransactionSettings.getProxyAddress(),
-                    mTransactionSettings.getProxyPort());
+            return Utils.ensureRouteToMmsNetwork(mContext, mmscUrl, mTransactionSettings.getProxyAddress(), new Utils.Task<byte[]>() {
+                @Override
+                public byte[] run() throws IOException {
+                    return HttpUtils.httpConnection(
+                            mContext, token,
+                            mmscUrl,
+                            pdu, HttpUtils.HTTP_POST_METHOD,
+                            mTransactionSettings.isProxySet(),
+                            mTransactionSettings.getProxyAddress(),
+                            mTransactionSettings.getProxyPort());
+                }
+            });
         }
     }
 
