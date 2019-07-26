@@ -76,7 +76,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     public abstract void onMessageReceived(Context context, Uri messageUri);
     public abstract void onError(Context context, String error);
 
-    public MmscInformation getMmscInfoForReceptionAck() {
+    public MmscInformation getMmscInfoForReceptionAck(Context context) {
         // Override this and provide the MMSC to send the ACK to.
         // some carriers will download duplicate MMS messages without this ACK. When using the
         // system sending method, apparently Google does not do this for us. Not sure why.
@@ -369,7 +369,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
             return null;
         }
 
-        if (getMmscInfoForReceptionAck() == null) {
+        if (getMmscInfoForReceptionAck(context) == null) {
             Log.v(TAG, "No MMSC information set, so no notification tasks will be able to complete");
             return null;
         }
@@ -384,7 +384,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
 
         try {
             final NotificationInd ind = getNotificationInd(context, intent);
-            final MmscInformation mmsc = getMmscInfoForReceptionAck();
+            final MmscInformation mmsc = getMmscInfoForReceptionAck(context);
             final TransactionSettings transactionSettings = new TransactionSettings(mmsc.mmscUrl, mmsc.mmsProxy, mmsc.proxyPort);
 
             final List<CommonAsyncTask> responseTasks = new ArrayList<>();
