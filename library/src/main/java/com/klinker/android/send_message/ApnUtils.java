@@ -183,7 +183,7 @@ public class ApnUtils {
                 .commit();
     }
 
-    private static ArrayList<APN> loadApns(Context context) {
+    public static ArrayList<APN> loadApns(Context context) {
         XmlResourceParser parser = context.getResources().getXml(R.xml.apns);
         ArrayList<APN> apns = new ArrayList<APN>();
         String mmsc = "", proxy = "", port = "", carrier = "";
@@ -371,7 +371,7 @@ public class ApnUtils {
         }
     }
 
-    private static class APN {
+    public static class APN {
         public String name;
         public String mmsc;
         public String proxy;
