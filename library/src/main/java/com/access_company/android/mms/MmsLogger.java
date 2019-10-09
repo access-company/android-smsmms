@@ -89,7 +89,13 @@ public class MmsLogger {
 
             int pid = android.os.Process.myPid();
             int tid = android.os.Process.myTid();
-            return Log.println(level, "MmsLogger", "[p:" + pid + "][t:" + tid + "] " + msg + stackTrace);
+            final String tag = "MmsLogger";
+            final String message = "[p:" + pid + "][t:" + tid + "] " + msg + stackTrace;
+            if (level == Log.ERROR) {
+                return Log.e(tag, message);
+            } else {
+                return Log.println(level, tag, message);
+            }
         }
     }
 }
