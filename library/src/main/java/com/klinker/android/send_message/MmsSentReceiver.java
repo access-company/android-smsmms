@@ -16,7 +16,6 @@
 
 package com.klinker.android.send_message;
 
-import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -28,7 +27,7 @@ import com.klinker.android.logger.Log;
 
 import java.io.File;
 
-public class MmsSentReceiver extends BroadcastReceiver {
+public abstract class MmsSentReceiver extends StatusUpdatedReceiver {
 
     private static final String TAG = "MmsSentReceiver";
 
@@ -37,8 +36,8 @@ public class MmsSentReceiver extends BroadcastReceiver {
     public static final String EXTRA_FILE_PATH = "file_path";
 
     @Override
-    public void onReceive(Context context, Intent intent) {
-        Log.v(TAG, "MMS has finished sending, marking it as so in the database");
+    public void updateInInternalDatabase(Context context, Intent intent, int resultCode) {
+        Log.v(TAG, "MMS has finished sending, marking it as so, in the database");
 
         Uri uri = Uri.parse(intent.getStringExtra(EXTRA_CONTENT_URI));
         Log.v(TAG, uri.toString());
