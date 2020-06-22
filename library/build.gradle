@@ -14,6 +14,16 @@ android {
         targetSdkVersion 25
     }
 
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        forTest {
+            initWith release
+        }
+    }
+
     lintOptions {
         abortOnError false
     }
