@@ -26,6 +26,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
 import android.os.Parcelable;
+import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.text.TextUtils;
@@ -34,6 +35,7 @@ import com.android.mms.MmsConfig;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
 import com.android.mms.service_alt.SendRequest;
+import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 import android.widget.Toast;
 import com.android.mms.dom.smil.parser.SmilXmlSerializer;
@@ -143,10 +145,14 @@ public class Transaction {
             if (!settings.getGroup()) {
                 // send individual MMS to each person in the group of addresses
                 for (String address : message.getAddresses()) {
-                    sendMmsMessage(message.getText(), new String[] { address }, message.getImages(), message.getImageNames(), message.getParts(), message.getSubject());
+                    sendMmsMessage(message.getText(), message.getFromAddress(), new String[] { address },
+                            message.getImages(), message.getImageNames(), message.getParts(), message.getSubject(),
+                            message.getSave(), message.getMessageUri());
                 }
             } else {
-                sendMmsMessage(message.getText(), message.getAddresses(), message.getImages(), message.getImageNames(), message.getParts(), message.getSubject());
+                sendMmsMessage(message.getText(), message.getFromAddress(), message.getAddresses(),
+                        message.getImages(), message.getImageNames(), message.getParts(), message.getSubject(),
+                        message.getSave(), message.getMessageUri());
             }
         } else {
             sendSmsMessage(message.getText(), message.getAddresses(), threadId, message.getDelay(),
@@ -395,7 +401,8 @@ public class Transaction {
         }
     }
 
-    private void sendMmsMessage(String text, String[] addresses, Bitmap[] image, String[] imageNames, List<Message.Part> parts, String subject) {
+    private void sendMmsMessage(String text, String fromAddress, String[] addresses, Bitmap[] image,
+                                String[] imageNames, List<Message.Part> parts, String subject, boolean save, Uri messageUri) {
         // merge the string[] of addresses into a single string so they can be inserted into the database easier
         String address = "";
 
@@ -448,7 +455,7 @@ public class Transaction {
             MessageInfo info = null;
 
             try {
-                info = getBytes(context, saveMessage, address.split(" "),
+                info = getBytes(context, saveMessage, fromAddress, address.split(" "),
                         data.toArray(new MMSPart[data.size()]), subject);
                 MmsMessageSender sender = new MmsMessageSender(context, info.location, info.bytes.length);
                 sender.sendMessage(info.token);
@@ -495,10 +502,10 @@ public class Transaction {
 
             if (settings.getUseSystemSending()) {
                 Log.v(TAG, "using system method for sending");
-                sendMmsThroughSystem(context, subject, data, addresses, explicitSentMmsReceiver);
+                sendMmsThroughSystem(context, subject, data, fromAddress, addresses, explicitSentMmsReceiver, save, messageUri);
             } else {
                 try {
-                    MessageInfo info = getBytes(context, saveMessage, address.split(" "),
+                    MessageInfo info = getBytes(context, saveMessage, fromAddress, address.split(" "),
                             data.toArray(new MMSPart[data.size()]), subject);
                     MmsRequestManager requestManager = new MmsRequestManager(context, info.bytes);
                     SendRequest request = new SendRequest(requestManager, Utils.getDefaultSubscriptionId(),
@@ -512,8 +519,8 @@ public class Transaction {
         }
     }
 
-    public static MessageInfo getBytes(Context context, boolean saveMessage, String[] recipients,
-                                       MMSPart[] parts, String subject)
+    public static MessageInfo getBytes(Context context, boolean saveMessage, String fromAddress,
+                                       String[] recipients, MMSPart[] parts, String subject)
                 throws MmsException {
         final SendReq sendRequest = new SendReq();
 
@@ -533,7 +540,7 @@ public class Transaction {
         sendRequest.setDate(Calendar.getInstance().getTimeInMillis() / 1000L);
 
         try {
-            sendRequest.setFrom(new EncodedStringValue(Utils.getMyPhoneNumber(context)));
+            sendRequest.prepareFromAddress(context, fromAddress, settings.getSubscriptionId());
         } catch (Exception e) {
             Log.e(TAG, "error getting from address", e);
         }
@@ -607,7 +614,7 @@ public class Transaction {
         if (saveMessage) {
             try {
                 PduPersister persister = PduPersister.getPduPersister(context);
-                info.location = persister.persist(sendRequest, Uri.parse("content://mms/outbox"), true, settings.getGroup(), null);
+                info.location = persister.persist(sendRequest, Uri.parse("content://mms/outbox"), true, settings.getGroup(), null, settings.getSubscriptionId());
             } catch (Exception e) {
                 Log.v("sending_mms_library", "error saving mms message");
                 Log.e(TAG, "exception thrown", e);
@@ -637,16 +644,30 @@ public class Transaction {
     public static final long DEFAULT_EXPIRY_TIME = 7 * 24 * 60 * 60;
     public static final int DEFAULT_PRIORITY = PduHeaders.PRIORITY_NORMAL;
 
-    private static void sendMmsThroughSystem(Context context, String subject, List<MMSPart> parts,
-                                             String[] addresses, Intent explicitSentMmsReceiver) {
+    private static void sendMmsThroughSystem(Context context, String subject, List<MMSPart> parts, String fromAddress,
+                                             String[] addresses, Intent explicitSentMmsReceiver, boolean save, Uri existingMessageUri) {
         try {
             final String fileName = "send." + String.valueOf(Math.abs(new Random().nextLong())) + ".dat";
             File mSendFile = new File(context.getCacheDir(), fileName);
 
-            SendReq sendReq = buildPdu(context, addresses, subject, parts);
-            PduPersister persister = PduPersister.getPduPersister(context);
-            Uri messageUri = persister.persist(sendReq, Uri.parse("content://mms/outbox"),
-                    true, settings.getGroup(), null);
+            SendReq sendReq = buildPdu(context, fromAddress, addresses, subject, parts);
+            Uri messageUri;
+            if (save) {
+                // this will be the default behavior if we do not explicitly set the save flag to false
+                PduPersister persister = PduPersister.getPduPersister(context);
+                messageUri = persister.persist(sendReq, Uri.parse("content://mms/outbox"),
+                        true, settings.getGroup(), null, settings.getSubscriptionId());
+            } else {
+                messageUri = existingMessageUri;
+                Log.v(TAG, messageUri.toString());
+
+                // update message status to outbox in os database as we are trying to resend the same message
+                ContentValues values = new ContentValues(1);
+                values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX);
+                int rowsUpdated = SqliteWrapper.update(context, context.getContentResolver(), messageUri, values,
+                        null, null);
+                Log.v(TAG, "rowsUpdated=" + rowsUpdated);
+            }
 
             Intent intent;
             if (explicitSentMmsReceiver == null) {
@@ -707,14 +728,11 @@ public class Transaction {
         }
     }
 
-    private static SendReq buildPdu(Context context, String[] recipients, String subject,
+    private static SendReq buildPdu(Context context, String fromAddress, String[] recipients, String subject,
                                     List<MMSPart> parts) {
         final SendReq req = new SendReq();
         // From, per spec
-        final String lineNumber = Utils.getMyPhoneNumber(context);
-        if (!TextUtils.isEmpty(lineNumber)) {
-            req.setFrom(new EncodedStringValue(lineNumber));
-        }
+        req.prepareFromAddress(context, fromAddress, settings.getSubscriptionId());
         // To
         for (String recipient : recipients) {
             req.addTo(new EncodedStringValue(recipient));

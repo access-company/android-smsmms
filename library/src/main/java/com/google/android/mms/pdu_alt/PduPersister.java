@@ -29,6 +29,7 @@ import android.drm.DrmManagerClient;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
+import android.provider.Telephony;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.Mms.Addr;
 import android.provider.Telephony.Mms.Part;
@@ -39,6 +40,7 @@ import android.telephony.PhoneNumberUtils;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 
+import com.android.mms.service_alt.SubscriptionIdChecker;
 import com.google.android.mms.ContentType;
 import com.google.android.mms.InvalidHeaderValueException;
 import com.google.android.mms.MmsException;
@@ -48,6 +50,7 @@ import com.google.android.mms.util_alt.PduCache;
 import com.google.android.mms.util_alt.PduCacheEntry;
 import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
+import com.klinker.android.send_message.Settings;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -1260,6 +1263,10 @@ public class PduPersister {
         }
     }
 
+    public String getContentLocationFromPduHeader(GenericPdu pdu) {
+        return toIsoString(pdu.getPduHeaders().getTextString(PduHeaders.CONTENT_LOCATION));
+    }
+
     /**
      * Persist a PDU object to specific location in the storage.
      *
@@ -1274,7 +1281,7 @@ public class PduPersister {
      */
 
     public Uri persist(GenericPdu pdu, Uri uri, boolean createThreadId, boolean groupMmsEnabled,
-            HashMap<Uri, InputStream> preOpenedFiles)
+            HashMap<Uri, InputStream> preOpenedFiles, int subscriptionId)
             throws MmsException {
         if (uri == null) {
             throw new MmsException("Uri may not be null.");
@@ -1456,6 +1463,11 @@ public class PduPersister {
             values.put(Mms.MESSAGE_SIZE, messageSize);
         }
 
+        // insert only if it is a valid subscription id.
+        if (Settings.DEFAULT_SUBSCRIPTION_ID != subscriptionId && SubscriptionIdChecker.getInstance(mContext).canUseSubscriptionId()) {
+            values.put(Telephony.Mms.SUBSCRIPTION_ID, subscriptionId);
+        }
+
         Uri res = null;
         if (existingUri) {
             res = uri;
@@ -1620,7 +1632,7 @@ public class PduPersister {
                 uriBuilder.build(), null, selection, selectionArgs,
                 PendingMessages.DUE_TIME);
     }
-  
+
     /**
      * Check if read permissions for SMS have been granted
      */
