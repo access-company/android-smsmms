@@ -21,6 +21,7 @@ import com.android.mms.MmsConfig;
 import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.BroadcastUtils;
 import com.klinker.android.send_message.MmsReceivedReceiver;
+import com.klinker.android.send_message.SmsManagerFactory;
 
 import java.io.File;
 import java.util.Random;
@@ -46,7 +47,7 @@ public class DownloadManager {
 
     }
 
-    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush) {
+    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush, int subscriptionId) {
         if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
             return;
         }
@@ -75,18 +76,23 @@ public class DownloadManager {
         download.putExtra(MmsReceivedReceiver.EXTRA_LOCATION_URL, location);
         download.putExtra(MmsReceivedReceiver.EXTRA_TRIGGER_PUSH, byPush);
         download.putExtra(MmsReceivedReceiver.EXTRA_URI, uri);
+        download.putExtra(MmsReceivedReceiver.SUBSCRIPTION_ID, subscriptionId);
         final PendingIntent pendingIntent = PendingIntent.getBroadcast(
                 context, 0, download, PendingIntent.FLAG_CANCEL_CURRENT);
+
+        final SmsManager smsManager = SmsManagerFactory.createSmsManager(subscriptionId);
 
         Bundle configOverrides = new Bundle();
         String httpParams = MmsConfig.getHttpParams();
         if (!TextUtils.isEmpty(httpParams)) {
             configOverrides.putString(SmsManager.MMS_CONFIG_HTTP_PARAMS, httpParams);
+        } else {
+            // this doesn't seem to always work...
+            // configOverrides = smsManager.getCarrierConfigValues();
         }
 
         grantUriPermission(context, contentUri);
-        SmsManager.getDefault().downloadMultimediaMessage(context,
-                location, contentUri, configOverrides, pendingIntent);
+        smsManager.downloadMultimediaMessage(context, location, contentUri, configOverrides, pendingIntent);
     }
 
     private void grantUriPermission(Context context, Uri contentUri) {
