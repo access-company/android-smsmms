@@ -21,6 +21,7 @@ android {
     useLibrary 'org.apache.http.legacy'
 }
 
+/*
 apply plugin: 'maven'
 apply plugin: 'signing'
 
@@ -99,3 +100,4 @@ afterEvaluate { project ->
         sign configurations.archives
     }
 }
+*/
