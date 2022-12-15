@@ -16,6 +16,7 @@
 
 package com.android.mms.transaction;
 
+import android.annotation.SuppressLint;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.ContentResolver;
@@ -318,8 +319,14 @@ public class RetryScheduler implements Observer {
 
                     Intent service = new Intent(TransactionService.ACTION_ONALARM,
                                         null, context, TransactionService.class);
+
+                    // Workaround for using PendingIntent.FLAG_MUTABLE until compileSdkVersion is updated to 31.
+                    // Actual value from:
+                    // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+                    final int flagMutable = 1<<25;
+                    @SuppressLint("WrongConstant")
                     PendingIntent operation = PendingIntent.getService(
-                            context, 0, service, PendingIntent.FLAG_ONE_SHOT);
+                            context, 0, service, PendingIntent.FLAG_ONE_SHOT | flagMutable);
                     AlarmManager am = (AlarmManager) context.getSystemService(
                             Context.ALARM_SERVICE);
                     am.set(AlarmManager.RTC, retryAt, operation);

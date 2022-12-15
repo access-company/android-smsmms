@@ -1,6 +1,7 @@
 
 package com.android.mms.transaction;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
@@ -77,8 +78,13 @@ public class DownloadManager {
         download.putExtra(MmsReceivedReceiver.EXTRA_TRIGGER_PUSH, byPush);
         download.putExtra(MmsReceivedReceiver.EXTRA_URI, uri);
         download.putExtra(MmsReceivedReceiver.SUBSCRIPTION_ID, subscriptionId);
+        // Workaround for using PendingIntent.FLAG_MUTABLE until compileSdkVersion is updated to 31.
+        // Actual value from:
+        // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+        final int flagMutable = 1<<25;
+        @SuppressLint("WrongConstant")
         final PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                context, 0, download, PendingIntent.FLAG_CANCEL_CURRENT);
+                context, 0, download, PendingIntent.FLAG_CANCEL_CURRENT | flagMutable);
 
         final SmsManager smsManager = SmsManagerFactory.createSmsManager(subscriptionId);
 
