@@ -66,7 +66,7 @@ public class MessageStatusService extends IntentService {
         SmsMessage message = updateMessageStatus(this, Uri.parse(messageUri), pdu, format);
     }
 
-    private SmsMessage updateMessageStatus(Context context, Uri messageUri, byte[] pdu,
+    public static SmsMessage updateMessageStatus(Context context, Uri messageUri, byte[] pdu,
             String format) {
         SmsMessage message = SmsMessage.createFromPdu(pdu);
         if (message == null) {
@@ -107,11 +107,11 @@ public class MessageStatusService extends IntentService {
         return message;
     }
 
-    private void error(String message) {
+    private static void error(String message) {
         Log.e(LOG_TAG, "[MessageStatusReceiver] " + message);
     }
 
-    private void log(String message) {
+    private static void log(String message) {
         Log.d(LOG_TAG, "[MessageStatusReceiver] " + message);
     }
 }
