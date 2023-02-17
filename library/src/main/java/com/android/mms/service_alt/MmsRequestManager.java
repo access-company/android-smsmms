@@ -24,6 +24,7 @@ import android.provider.Telephony;
 import android.util.Log;
 
 import com.android.mms.transaction.NotificationTransaction;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.PduParser;
 import com.google.android.mms.pdu_alt.PduPersister;
@@ -71,6 +72,7 @@ public class MmsRequestManager implements MmsRequest.RequestManager {
         try {
             // Parse M-Retrieve.conf
             RetrieveConf retrieveConf = (RetrieveConf) new PduParser(response).parse();
+            ExternalLogger.i("[MmsRequestManager] writePduToContentUri() retrieveConf=" + ExternalLogger.getNameWithHash(retrieveConf));
             if (null == retrieveConf) {
                 throw new MmsException("Invalid M-Retrieve.conf PDU.");
             }

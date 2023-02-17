@@ -26,6 +26,8 @@ import android.preference.PreferenceManager;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
 import android.provider.Telephony.MmsSms.PendingMessages;
+
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 
 import com.android.mms.logs.LogTag;
@@ -116,6 +118,7 @@ public class MmsMessageSender implements MessageSender {
 
             SqliteWrapper.insert(mContext, mContext.getContentResolver(),
                     PendingMessages.CONTENT_URI, values);
+            ExternalLogger.i("[MmsMessageSender] sendMessage() update pending message msgId=" + messageId + ", errorType=0");
         } else {
             p.move(mMessageUri, Mms.Outbox.CONTENT_URI);
         }

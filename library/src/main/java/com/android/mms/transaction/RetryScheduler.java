@@ -36,6 +36,7 @@ import android.provider.Telephony.MmsSms.PendingMessages;
 
 import com.android.mms.logs.LogTag;
 import com.android.mms.util.DownloadManager;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduPersister;
 import com.klinker.android.logger.Log;
@@ -71,12 +72,14 @@ public class RetryScheduler implements Observer {
     }
 
     public void update(Observable observable) {
+        ExternalLogger.i("[RetryScheduler] update() [start]");
         try {
             Transaction t = (Transaction) observable;
 
             if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                 Log.v(TAG, "[RetryScheduler] update " + observable);
             }
+            ExternalLogger.d("[RetryScheduler] update() transaction=" + ExternalLogger.getNameWithHash(t));
 
             // We are only supposed to handle M-Notification.ind, M-Send.req
             // and M-ReadRec.ind.
@@ -86,8 +89,10 @@ public class RetryScheduler implements Observer {
                     || (t instanceof SendTransaction)) {
                 try {
                     TransactionState state = t.getState();
+                    ExternalLogger.d("[RetryScheduler] update() state=" + state.getState());
                     if (state.getState() == TransactionState.FAILED) {
                         Uri uri = state.getContentUri();
+                        ExternalLogger.i("[RetryScheduler] update() schedule retry. uri=" + uri);
                         if (uri != null) {
                             scheduleRetry(uri);
                         }
@@ -101,10 +106,12 @@ public class RetryScheduler implements Observer {
                 setRetryAlarm(mContext);
             }
         }
+        ExternalLogger.i("[RetryScheduler] update() [end]");
     }
 
     public void scheduleRetry(Uri uri) {
         long msgId = ContentUris.parseId(uri);
+        ExternalLogger.i("[RetryScheduler] scheduleRetry() [start] messageId=" + msgId + ", uri=" + uri);
 
         Uri.Builder uriBuilder = PendingMessages.CONTENT_URI.buildUpon();
         uriBuilder.appendQueryParameter("protocol", "mms");
@@ -123,8 +130,10 @@ public class RetryScheduler implements Observer {
                             PendingMessages.RETRY_INDEX)) + 1; // Count this time.
 
                     int cursorErrorType = cursor.getInt(cursor.getColumnIndexOrThrow(PendingMessages.ERROR_TYPE));
+                    ExternalLogger.d("[RetryScheduler] scheduleRetry() cursorErrorType=" + cursorErrorType + ", retryIndex=" + retryIndex);
                     if (cursorErrorType == Telephony.MmsSms.ERR_TYPE_MMS_PROTO_PERMANENT) {
                         // If a permanent error has already been set, do not retry
+                        ExternalLogger.i("[RetryScheduler] scheduleRetry() [end1] If a permanent error has already been set, do not retry");
                         return;
                     }
 
@@ -137,6 +146,7 @@ public class RetryScheduler implements Observer {
                     long current = System.currentTimeMillis();
                     boolean isRetryDownloading =
                             (msgType == PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND);
+                    ExternalLogger.d("[RetryScheduler] scheduleRetry() isRetryDownloading=" + isRetryDownloading);
                     boolean retry = true;
                     int respStatus = getResponseStatus(msgId);
                     int errorString = 0;
@@ -162,6 +172,7 @@ public class RetryScheduler implements Observer {
                             DownloadManager.init(mContext.getApplicationContext());
                             DownloadManager.getInstance().showErrorCodeToast(errorString);
                             retry = false;
+                            ExternalLogger.i("[RetryScheduler] scheduleRetry() not retry. status=" + respStatus);
                         }
                     } else {
                         // apply R880 IOT issue (Conformance 11.6 Retrieve Invalid Message)
@@ -175,6 +186,7 @@ public class RetryScheduler implements Observer {
                             SqliteWrapper.delete(mContext, mContext.getContentResolver(), uri,
                                     null, null);
                             retry = false;
+                            ExternalLogger.i("[RetryScheduler] scheduleRetry() not retry. status=" + respStatus);
                             return;
                         }
                     }
@@ -185,12 +197,14 @@ public class RetryScheduler implements Observer {
                             Log.v(TAG, "scheduleRetry: retry for " + uri + " is scheduled at "
                                     + (retryAt - System.currentTimeMillis()) + "ms from now");
                         }
+                        ExternalLogger.i("[RetryScheduler] scheduleRetry() scheduled at " + (retryAt - System.currentTimeMillis()) + "ms from now uri=" + uri);
 
                         values.put(PendingMessages.DUE_TIME, retryAt);
 
                         if (isRetryDownloading) {
                             // Downloading process is transiently failed.
                             DownloadManager.init(mContext.getApplicationContext());
+                            ExternalLogger.i("[RetryScheduler] scheduleRetry() transient failure");
                             DownloadManager.getInstance().markState(
                                     uri, DownloadManager.STATE_TRANSIENT_FAILURE);
                         }
@@ -217,6 +231,7 @@ public class RetryScheduler implements Observer {
                             }
 
                             DownloadManager.init(mContext.getApplicationContext());
+                            ExternalLogger.i("[RetryScheduler] scheduleRetry() permanent failure");
                             DownloadManager.getInstance().markState(
                                     uri, DownloadManager.STATE_PERMANENT_FAILURE);
                         } else {
@@ -226,6 +241,7 @@ public class RetryScheduler implements Observer {
                             SqliteWrapper.update(mContext, mContext.getContentResolver(),
                                     uri, readValues, null, null);
                             markMmsFailed(mContext);
+                            ExternalLogger.i("[RetryScheduler] scheduleRetry() Mark the failed message as unread");
                         }
                     }
 
@@ -239,13 +255,16 @@ public class RetryScheduler implements Observer {
                     SqliteWrapper.update(mContext, mContentResolver,
                             PendingMessages.CONTENT_URI,
                             values, PendingMessages._ID + "=" + id, null);
+                    ExternalLogger.i("[RetryScheduler] scheduleRetry() update pending message msessageId=" + msgId + ", pendingId=" + id + ", errorType=" + errorType);
                 } else if (LOCAL_LOGV) {
                     Log.v(TAG, "Cannot found correct pending status for: " + msgId);
+                    ExternalLogger.d("[RetryScheduler] scheduleRetry() Cannot found correct pending status msessageId=" + msgId);
                 }
             } finally {
                 cursor.close();
             }
         }
+        ExternalLogger.i("[RetryScheduler] scheduleRetry() [end]");
     }
 
     private void markMmsFailed(final Context context) {
@@ -315,6 +334,7 @@ public class RetryScheduler implements Observer {
     }
 
     public static void setRetryAlarm(Context context) {
+        ExternalLogger.i("[RetryScheduler] setRetryAlarm() [start]");
         Cursor cursor = PduPersister.getPduPersister(context).getPendingMessages(
                 Long.MAX_VALUE);
         if (cursor != null) {
@@ -337,15 +357,21 @@ public class RetryScheduler implements Observer {
                     AlarmManager am = (AlarmManager) context.getSystemService(
                             Context.ALARM_SERVICE);
                     am.set(AlarmManager.RTC, retryAt, operation);
+                    ExternalLogger.i("[RetryScheduler] setRetryAlarm() Next retry is scheduled at" + (retryAt - System.currentTimeMillis()) + "ms from now");
 
                     if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                         Log.v(TAG, "Next retry is scheduled at"
                                 + (retryAt - System.currentTimeMillis()) + "ms from now");
                     }
+                } else {
+                    ExternalLogger.d("[RetryScheduler] setRetryAlarm() moveToFirst failed");
                 }
             } finally {
                 cursor.close();
             }
+        } else {
+            ExternalLogger.d("[RetryScheduler] setRetryAlarm() cursor is null");
         }
+        ExternalLogger.i("[RetryScheduler] setRetryAlarm() [end]");
     }
 }

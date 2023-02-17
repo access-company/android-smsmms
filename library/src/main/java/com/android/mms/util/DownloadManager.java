@@ -131,6 +131,7 @@ public class DownloadManager {
     }
 
     public void markState(final Uri uri, int state) {
+        ExternalLogger.i("[DownloadManager] markState() [start] uri=" + uri + ", state=" + state);
         // Notify user if the message has expired.
         try {
             NotificationInd nInd = (NotificationInd) PduPersister.getPduPersister(mContext)
@@ -144,15 +145,18 @@ public class DownloadManager {
                     }
                 });
                 SqliteWrapper.delete(mContext, mContext.getContentResolver(), uri, null, null);
+                ExternalLogger.i("[DownloadManager] markState() [end1] message has expired");
                 return;
             }
         } catch(MmsException e) {
             Log.e(TAG, e.getMessage(), e);
+            ExternalLogger.e("[DownloadManager] markState() [end2] exception", e);
             return;
         }
 
         // Notify user if downloading permanently failed.
         if (state == STATE_PERMANENT_FAILURE) {
+            ExternalLogger.i("[DownloadManager] markState() permanent failure");
             mHandler.post(new Runnable() {
                 public void run() {
                     try {
@@ -160,6 +164,7 @@ public class DownloadManager {
                                 Toast.LENGTH_LONG).show();
                     } catch (MmsException e) {
                         Log.e(TAG, e.getMessage(), e);
+                        ExternalLogger.i("[DownloadManager] markState() permanent failure exception", e);
                     }
                 }
             });
@@ -173,6 +178,7 @@ public class DownloadManager {
         values.put(Mms.STATUS, state);
         SqliteWrapper.update(mContext, mContext.getContentResolver(),
                     uri, values, null, null);
+        ExternalLogger.i("[DownloadManager] markState() [end] message status updated");
     }
 
     public void showErrorCodeToast(int errorStr) {
@@ -189,6 +195,7 @@ public class DownloadManager {
     }
 
     private String getMessage(Uri uri) throws MmsException {
+        ExternalLogger.w("[DownloadManager] getMessage() show download failure notification uri=" + uri);
         NotificationInd ind = (NotificationInd) PduPersister
                 .getPduPersister(mContext).load(uri);
 

@@ -27,6 +27,7 @@ import android.provider.Telephony.Mms.Sent;
 import android.text.TextUtils;
 
 import com.android.mms.logs.LogTag;
+import com.android.mms.util.ExternalLogger;
 import com.android.mms.util.RateController;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.pdu_alt.EncodedStringValue;
@@ -124,6 +125,7 @@ public class SendTransaction extends Transaction implements Runnable {
             }
 
             SendConf conf = (SendConf) new PduParser(response).parse();
+            ExternalLogger.i("[SendTransaction] run() conf=" + ExternalLogger.getNameWithHash(conf));
             if (conf == null) {
                 Log.e(TAG, "No M-Send.conf received.");
                 builder.append("No M-Send.conf received.\n");

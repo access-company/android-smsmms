@@ -36,6 +36,7 @@ import com.android.mms.MmsConfig;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
 import com.android.mms.service_alt.SendRequest;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 import android.widget.Toast;
@@ -125,6 +126,7 @@ public class Transaction {
      */
     public void sendNewMessage(Message message, long threadId,
                                Parcelable sentMessageParcelable, Parcelable deliveredParcelable) {
+        ExternalLogger.i("[Transaction] sendNewMessage() [start]");
         this.saveMessage = message.getSave();
 
         // if message:
@@ -139,27 +141,33 @@ public class Transaction {
         //
         // then, send as MMS, else send as Voice or SMS
         if (checkMMS(message)) {
+            ExternalLogger.i("[Transaction] sendNewMessage() send as MMS");
             try { Looper.prepare(); } catch (Exception e) { }
+            ExternalLogger.d("[Transaction] sendNewMessage() prepared");
             RateController.init(context);
             DownloadManager.init(context);
 
             if (!settings.getGroup()) {
                 // send individual MMS to each person in the group of addresses
+                ExternalLogger.i("[Transaction] sendNewMessage() send individual MMS to each person in the group of addresses. addresses=" + message.getAddresses().length + ", uri=" + message.getMessageUri());
                 for (String address : message.getAddresses()) {
                     sendMmsMessage(message.getText(), message.getFromAddress(), new String[] { address },
                             message.getImages(), message.getImageNames(), message.getParts(), message.getSubject(),
                             message.getSave(), message.getMessageUri());
                 }
             } else {
+                ExternalLogger.i("[Transaction] sendNewMessage() send group MMS");
                 sendMmsMessage(message.getText(), message.getFromAddress(), message.getAddresses(),
                         message.getImages(), message.getImageNames(), message.getParts(), message.getSubject(),
                         message.getSave(), message.getMessageUri());
             }
         } else {
+            ExternalLogger.i("[Transaction] sendNewMessage() send as SMS");
             sendSmsMessage(message.getText(), message.getAddresses(), threadId, message.getDelay(),
                     sentMessageParcelable, deliveredParcelable);
         }
 
+        ExternalLogger.i("[Transaction] sendNewMessage() [end]");
     }
 
     /**
@@ -410,6 +418,9 @@ public class Transaction {
 
     private void sendMmsMessage(String text, String fromAddress, String[] addresses, Bitmap[] image,
                                 String[] imageNames, List<Message.Part> parts, String subject, boolean save, Uri messageUri) {
+        ExternalLogger.i("[Transaction] sendMmsMessage() [start] body=" + (text != null ? text.length() : "null") +
+                ", images=" + (image != null ? image.length : "null") +
+                ", parts=" + (parts != null ? parts.size() : "null"));
         // merge the string[] of addresses into a single string so they can be inserted into the database easier
         String address = "";
 
@@ -459,6 +470,7 @@ public class Transaction {
         }
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
+            ExternalLogger.i("[Transaction] sendMmsMessage() KitKat");
             MessageInfo info = null;
 
             try {
@@ -503,14 +515,18 @@ public class Transaction {
                 context.registerReceiver(receiver, filter);
             } catch (Throwable e) {
                 Log.e(TAG, "exception thrown", e);
+                ExternalLogger.e("[Transaction] sendMmsMessage() KitKat Exception", e);
             }
         } else {
             Log.v(TAG, "using lollipop method for sending sms");
+            ExternalLogger.d("[Transaction] sendMmsMessage() Lollipop");
 
             if (settings.getUseSystemSending()) {
                 Log.v(TAG, "using system method for sending");
+                ExternalLogger.i("[Transaction] sendMmsMessage() use system method");
                 sendMmsThroughSystem(context, subject, data, fromAddress, addresses, explicitSentMmsReceiver, save, messageUri);
             } else {
+                ExternalLogger.i("[Transaction] sendMmsMessage() use library method");
                 try {
                     MessageInfo info = getBytes(context, saveMessage, fromAddress, address.split(" "),
                             data.toArray(new MMSPart[data.size()]), subject);
@@ -521,9 +537,11 @@ public class Transaction {
                     request.execute(context, manager);
                 } catch (Exception e) {
                     Log.e(TAG, "error sending mms", e);
+                    ExternalLogger.e("[Transaction] sendMmsMessage() use library method Exception", e);
                 }
             }
         }
+        ExternalLogger.i("[Transaction] sendMmsMessage() [end]");
     }
 
     public static MessageInfo getBytes(Context context, boolean saveMessage, String fromAddress,
@@ -653,6 +671,7 @@ public class Transaction {
 
     private static void sendMmsThroughSystem(Context context, String subject, List<MMSPart> parts, String fromAddress,
                                              String[] addresses, Intent explicitSentMmsReceiver, boolean save, Uri existingMessageUri) {
+        ExternalLogger.i("[Transaction] sendMmsThroughSystem() [start] uri=" + existingMessageUri);
         try {
             final String fileName = "send." + String.valueOf(Math.abs(new Random().nextLong())) + ".dat";
             File mSendFile = new File(context.getCacheDir(), fileName);
@@ -660,11 +679,13 @@ public class Transaction {
             SendReq sendReq = buildPdu(context, fromAddress, addresses, subject, parts);
             Uri messageUri;
             if (save) {
+                ExternalLogger.d("[Transaction] sendMmsThroughSystem() save message");
                 // this will be the default behavior if we do not explicitly set the save flag to false
                 PduPersister persister = PduPersister.getPduPersister(context);
                 messageUri = persister.persist(sendReq, Uri.parse("content://mms/outbox"),
                         true, settings.getGroup(), null, settings.getSubscriptionId());
             } else {
+                ExternalLogger.d("[Transaction] sendMmsThroughSystem() update existing message");
                 messageUri = existingMessageUri;
                 Log.v(TAG, messageUri.toString());
 
@@ -675,6 +696,7 @@ public class Transaction {
                         null, null);
                 Log.v(TAG, "rowsUpdated=" + rowsUpdated);
             }
+            ExternalLogger.d("[Transaction] sendMmsThroughSystem() messageUri=" + messageUri);
 
             Intent intent;
             if (explicitSentMmsReceiver == null) {
@@ -694,6 +716,7 @@ public class Transaction {
             final PendingIntent pendingIntent = PendingIntent.getBroadcast(
                     context, 0, intent, PendingIntent.FLAG_CANCEL_CURRENT | flagMutable);
 
+            ExternalLogger.d("[Transaction] sendMmsThroughSystem() write message to provider");
             Uri writerUri = (new Uri.Builder())
                     .authority(context.getPackageName() + ".MmsFileProvider")
                     .path(fileName)
@@ -707,6 +730,7 @@ public class Transaction {
                 contentUri = writerUri;
             } catch (final IOException e) {
                 Log.e(TAG, "Error writing send file", e);
+                ExternalLogger.e("[Transaction] sendMmsThroughSystem() write message to provider exception", e);
             } finally {
                 if (writer != null) {
                     try {
@@ -725,18 +749,23 @@ public class Transaction {
             configOverrides.putInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, MmsConfig.getMaxMessageSize());
 
             if (contentUri != null) {
+                ExternalLogger.i("[Transaction] sendMmsThroughSystem() send message through system method");
                 SmsManagerFactory.createSmsManager(settings).sendMultimediaMessage(context,
                         contentUri, null, configOverrides, pendingIntent);
             } else {
                 Log.e(TAG, "Error writing sending Mms");
+                ExternalLogger.w("[Transaction] sendMmsThroughSystem() failed to writing sending MMS");
                 try {
                     pendingIntent.send(SmsManager.MMS_ERROR_IO_ERROR);
                 } catch (PendingIntent.CanceledException ex) {
                     Log.e(TAG, "Mms pending intent cancelled?", ex);
+                    ExternalLogger.e("[Transaction] sendMmsThroughSystem() Mms pending intent cancelled", ex);
                 }
             }
+            ExternalLogger.i("[Transaction] sendMmsThroughSystem() [end]");
         } catch (Exception e) {
             Log.e(TAG, "error using system sending method", e);
+            ExternalLogger.e("[Transaction] sendMmsThroughSystem() error using system sending method", e);
         }
     }
 

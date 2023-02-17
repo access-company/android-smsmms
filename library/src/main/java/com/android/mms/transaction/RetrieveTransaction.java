@@ -27,6 +27,8 @@ import android.preference.PreferenceManager;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.Mms.Inbox;
 import android.text.TextUtils;
+
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 
 import com.android.mms.logs.LogTag;
@@ -134,6 +136,8 @@ public class RetrieveTransaction extends Transaction implements Runnable {
 //            request.execute(mContext, manager);
 //        } else {
             try {
+                ExternalLogger.i("[RetrieveTransaction] run() [start] transaction=" + ExternalLogger.getNameWithHash(this) + ", uri=" + mUri);
+
                 // Change the downloading state of the M-Notification.ind.
                 DownloadManager.init(mContext.getApplicationContext());
                 DownloadManager.getInstance().markState(
@@ -144,6 +148,7 @@ public class RetrieveTransaction extends Transaction implements Runnable {
 
                 // Parse M-Retrieve.conf
                 RetrieveConf retrieveConf = (RetrieveConf) new PduParser(resp).parse();
+                ExternalLogger.d("[RetrieveTransaction] run() retrieveConf=" + ExternalLogger.getNameWithHash(retrieveConf));
                 if (null == retrieveConf) {
                     throw new MmsException("Invalid M-Retrieve.conf PDU.");
                 }
@@ -154,6 +159,7 @@ public class RetrieveTransaction extends Transaction implements Runnable {
                     // notification to user.
                     mTransactionState.setState(TransactionState.FAILED);
                     mTransactionState.setContentUri(mUri);
+                    ExternalLogger.d("[RetrieveTransaction] run() duplicated message");
                 } else {
                     boolean group;
                     int subId = Settings.DEFAULT_SUBSCRIPTION_ID;
@@ -169,6 +175,7 @@ public class RetrieveTransaction extends Transaction implements Runnable {
                     PduPersister persister = PduPersister.getPduPersister(mContext);
                     msgUri = persister.persist(retrieveConf, Inbox.CONTENT_URI, true,
                             group, null, subId);
+                    ExternalLogger.d("[RetrieveTransaction] run() new uri=" + msgUri);
 
                     // Use local time instead of PDU time
                     ContentValues values = new ContentValues();
@@ -182,6 +189,7 @@ public class RetrieveTransaction extends Transaction implements Runnable {
 
                     SqliteWrapper.update(mContext, mContext.getContentResolver(),
                             msgUri, values, null, null);
+                    ExternalLogger.d("[RetrieveTransaction] run() Stored M-Retrieve.conf into Inbox");
 
                     // The M-Retrieve.conf has been successfully downloaded.
                     mTransactionState.setState(TransactionState.SUCCESS);
@@ -196,19 +204,23 @@ public class RetrieveTransaction extends Transaction implements Runnable {
                 // Delete the corresponding M-Notification.ind.
                 SqliteWrapper.delete(mContext, mContext.getContentResolver(),
                         mUri, null, null);
+                ExternalLogger.d("[RetrieveTransaction] run() Delete the corresponding M-Notification.ind. uri=" + mUri);
 
                 // Send ACK to the Proxy-Relay to indicate we have fetched the
                 // MM successfully.
                 // Don't mark the transaction as failed if we failed to send it.
                 sendAcknowledgeInd(retrieveConf);
+                ExternalLogger.d("[RetrieveTransaction] run() Sent acknowledgeInd");
             } catch (Throwable t) {
                 Log.e(TAG, "error", t);
+                ExternalLogger.e("[RetrieveTransaction] run() Error", t);
             } finally {
                 if (mTransactionState.getState() != TransactionState.SUCCESS) {
                     mTransactionState.setState(TransactionState.FAILED);
                     mTransactionState.setContentUri(mUri);
                     Log.e(TAG, "Retrieval failed.");
                 }
+                ExternalLogger.d("[RetrieveTransaction] run() transaction=" + ExternalLogger.getNameWithHash(this) + ", uri=" + mUri);
                 notifyObservers();
             }
 //        }

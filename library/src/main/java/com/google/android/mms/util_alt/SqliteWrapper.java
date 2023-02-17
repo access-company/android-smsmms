@@ -23,6 +23,8 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
+
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 import android.widget.Toast;
 
@@ -97,11 +99,13 @@ public final class SqliteWrapper {
 
     public static int delete(Context context, ContentResolver resolver, Uri uri,
             String where, String[] selectionArgs) {
+        ExternalLogger.d("[SqliteWrapper] delete() uri=" + uri);
         try {
             return resolver.delete(uri, where, selectionArgs);
         } catch (SQLiteException e) {
             Log.e(TAG, "Catch a SQLiteException when delete: ", e);
             checkSQLiteException(context, e);
+            ExternalLogger.e("[SqliteWrapper] delete() exception uri=" + uri, e);
             return -1;
         }
     }

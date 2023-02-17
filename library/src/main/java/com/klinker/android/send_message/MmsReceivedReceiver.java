@@ -35,6 +35,7 @@ import com.android.mms.transaction.DownloadManager;
 import com.android.mms.transaction.HttpUtils;
 import com.android.mms.transaction.RetryScheduler;
 import com.android.mms.transaction.TransactionSettings;
+import com.android.mms.util.ExternalLogger;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.InvalidHeaderValueException;
 import com.google.android.mms.MmsException;
@@ -91,6 +92,17 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     public final void onReceive(final Context context, final Intent intent) {
         Log.v(TAG, "MMS has finished downloading, persisting it to the database");
 
+        final String uri;
+        {
+            Object uriObject = intent.getParcelableExtra(EXTRA_URI);
+            if (uriObject != null) {
+                uri = uriObject.toString();
+            } else {
+                uri = "null";
+            }
+        }
+        ExternalLogger.i("[MmsReceivedReceiver] onReceive() [start] uri=" + uri);
+
         final String path = intent.getStringExtra(EXTRA_FILE_PATH);
         final int subscriptionId = intent.getIntExtra(SUBSCRIPTION_ID, Utils.getDefaultSubscriptionId());
         Log.v(TAG, path);
@@ -98,6 +110,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                ExternalLogger.i("[MmsReceivedReceiver] onReceive() thread [start] uri=" + uri);
                 FileInputStream reader = null;
                 Uri messageUri = null;
                 String errorMessage = null;
@@ -108,13 +121,16 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                     reader = new FileInputStream(mDownloadFile);
                     final byte[] response = new byte[nBytes];
                     reader.read(response, 0, nBytes);
+                    ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread file size=" + nBytes + ", path=" + path);
 
                     List<CommonAsyncTask> tasks = getNotificationTask(context, intent, response);
 
+                    ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread call persist");
                     messageUri = DownloadRequest.persist(context, response,
                             new MmsConfig.Overridden(new MmsConfig(context), null),
                             intent.getStringExtra(EXTRA_LOCATION_URL),
                             subscriptionId, null);
+                    ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread messageUri=" + messageUri);
 
                     Log.v(TAG, "response saved successfully");
                     Log.v(TAG, "response length: " + response.length);
@@ -130,9 +146,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 } catch (FileNotFoundException e) {
                     errorMessage = "MMS received, file not found exception";
                     Log.e(TAG, errorMessage, e);
+                    ExternalLogger.e("[MmsReceivedReceiver] onReceive() thread [FileNotFoundException]", e);
                 } catch (IOException e) {
                     errorMessage = "MMS received, io exception";
                     Log.e(TAG, errorMessage, e);
+                    ExternalLogger.e("[MmsReceivedReceiver] onReceive() thread [IOException]", e);
                 } finally {
                     if (reader != null) {
                         try {
@@ -153,8 +171,10 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 if (errorMessage != null) {
                     onError(context, errorMessage);
                 }
+                ExternalLogger.i("[MmsReceivedReceiver] onReceive() thread [end]");
             }
         }).start();
+        ExternalLogger.i("[MmsReceivedReceiver] onReceive() [end]");
     }
 
     protected void notifyReceiveCompleted(Intent intent){}
@@ -189,6 +209,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError != 200) {
             Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            ExternalLogger.w("[MmsReceivedReceiver] handleHttpError() schedule retry. HTTP status=" + httpError + ", uri=" + uri);
             RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
@@ -368,19 +389,23 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     private List<CommonAsyncTask> getNotificationTask(Context context, Intent intent, byte[] response) {
         if (response.length == 0) {
             Log.v(TAG, "MmsReceivedReceiver.sendNotification blank response");
+            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end1] blank response");
             return null;
         }
 
         if (getMmscInfoForReceptionAck(context) == null) {
             Log.v(TAG, "No MMSC information set, so no notification tasks will be able to complete");
+            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end2] No MMSC information set, so no notification tasks will be able to complete");
             return null;
         }
 
         final GenericPdu pdu =
                 (new PduParser(response, new MmsConfig.Overridden(new MmsConfig(context), null).
                         getSupportMmsContentDisposition())).parse();
+        ExternalLogger.d("[MmsReceivedReceiver] getNotificationTask() pdu=" + ExternalLogger.getNameWithHash(pdu));
         if (pdu == null || !(pdu instanceof RetrieveConf)) {
             android.util.Log.e(TAG, "MmsReceivedReceiver.sendNotification failed to parse pdu");
+            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end3] failed to parse pdu");
             return null;
         }
 
@@ -393,9 +418,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
             responseTasks.add(new AcknowledgeIndTask(context, ind, transactionSettings, (RetrieveConf) pdu));
             responseTasks.add(new NotifyRespTask(context, ind, transactionSettings));
 
+            ExternalLogger.i("[MmsReceivedReceiver] getNotificationTask() [end] success");
             return responseTasks;
         } catch (MmsException e) {
             Log.e(TAG, "error", e);
+            ExternalLogger.e("[MmsReceivedReceiver] getNotificationTask() [exception]", e);
             return null;
         }
     }

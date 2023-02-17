@@ -23,16 +23,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
+
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 
 import com.android.mms.service_alt.exception.MmsHttpException;
 
-import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.GenericPdu;
 import com.google.android.mms.pdu_alt.PduHeaders;
 import com.google.android.mms.pdu_alt.PduParser;
@@ -101,6 +101,7 @@ public class SendRequest extends MmsRequest {
             final boolean supportContentDisposition = mMmsConfig.getSupportMmsContentDisposition();
             // Persist the request PDU first
             GenericPdu pdu = (new PduParser(mPduData, supportContentDisposition)).parse();
+            ExternalLogger.i("[SendRequest] persistIfRequired() pdu=" + ExternalLogger.getNameWithHash(pdu));
             if (pdu == null) {
                 Log.e(TAG, "SendRequest.persistIfRequired: can't parse input PDU");
                 return null;

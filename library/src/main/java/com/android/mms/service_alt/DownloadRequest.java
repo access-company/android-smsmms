@@ -30,6 +30,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.mms.service_alt.exception.MmsHttpException;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.GenericPdu;
 import com.google.android.mms.pdu_alt.PduHeaders;
@@ -115,6 +116,7 @@ public class DownloadRequest extends MmsRequest {
 
     public static Uri persist(Context context, byte[] response, MmsConfig.Overridden mmsConfig,
                               String locationUrl, int subId, String creator) {
+        ExternalLogger.i("[DownloadRequest] persist() [start] Provider locationUrl=" + locationUrl);
         // Let any mms apps running as secondary user know that a new mms has been downloaded.
         notifyOfDownload(context);
 
@@ -134,17 +136,20 @@ public class DownloadRequest extends MmsRequest {
                             Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
                             locationUrl
                     });
+            ExternalLogger.i("[DownloadRequest] persist() [end1] empty response.");
             return null;
         }
         final long identity = Binder.clearCallingIdentity();
         try {
             final GenericPdu pdu =
                     (new PduParser(response, mmsConfig.getSupportMmsContentDisposition())).parse();
+            ExternalLogger.d("[DownloadRequest] persist() pdu=" + ExternalLogger.getNameWithHash(pdu));
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
                 Log.e(TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
 
                 // Update the error type of the NotificationInd
                 setErrorType(context, locationUrl, Telephony.MmsSms.ERR_TYPE_MMS_PROTO_PERMANENT);
+                ExternalLogger.i("[DownloadRequest] persist() [end2] error response.");
                 return null;
             }
             final RetrieveConf retrieveConf = (RetrieveConf) pdu;
@@ -176,8 +181,10 @@ public class DownloadRequest extends MmsRequest {
                     true/*groupMmsEnabled*/,
                     null/*preOpenedFiles*/,
                     subId);
+            ExternalLogger.d("[DownloadRequest] persist() messageUri=" + messageUri);
             if (messageUri == null) {
                 Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message");
+                ExternalLogger.i("[DownloadRequest] persist() [end3] can not persist message.");
                 return null;
             }
             // Update some of the properties of the message
@@ -208,9 +215,11 @@ public class DownloadRequest extends MmsRequest {
                         null/*selectionArg*/);
                 if (rowsUpdated != 1) {
                     Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message");
+                    ExternalLogger.w("[DownloadRequest] persist() can not update message");
                 }
 
             } catch (SQLiteException ex) {
+                ExternalLogger.i("[DownloadRequest] persist() update failed. retry", ex);
                 // if the exception says no such column like sub_id, ignore this value and try update
                 if (ex.getMessage().contains("no such column: sub_id")) {
                     // ignore this column and proceed.
@@ -224,6 +233,7 @@ public class DownloadRequest extends MmsRequest {
             }
 
             // Delete the corresponding NotificationInd
+            ExternalLogger.d("[DownloadRequest] persist() Delete the corresponding NotificationInd");
             SqliteWrapper.delete(context,
                     context.getContentResolver(),
                     Telephony.Mms.CONTENT_URI,
@@ -233,16 +243,21 @@ public class DownloadRequest extends MmsRequest {
                             locationUrl
                     });
 
+            ExternalLogger.i("[DownloadRequest] persist() [end4] messageUri=" + messageUri);
             return messageUri;
         } catch (MmsException e) {
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
+            ExternalLogger.w("[DownloadRequest] persist() MmsException", e);
         } catch (SQLiteException e) {
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message", e);
+            ExternalLogger.w("[DownloadRequest] persist() SQLiteException", e);
         } catch (RuntimeException e) {
             Log.e(TAG, "DownloadRequest.persistIfRequired: can not parse response", e);
+            ExternalLogger.w("[DownloadRequest] persist() RuntimeException", e);
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+        ExternalLogger.i("[DownloadRequest] persist() [end5] return null");
         return null;
     }
 
@@ -365,7 +380,9 @@ public class DownloadRequest extends MmsRequest {
 
     private static void setErrorType(Context context, String locationUrl, int errorType) {
         Long msgId = getId(context, locationUrl);
+        ExternalLogger.i("[DownloadRequest] setErrorType() [start] Provider locationUrl=" + locationUrl + ", messageId=" + msgId + ", errorType=" + errorType);
         if (msgId == null) {
+            ExternalLogger.i("[DownloadRequest] setErrorType() [end1] msgId is null");
             return;
         }
 
@@ -376,6 +393,7 @@ public class DownloadRequest extends MmsRequest {
         Cursor cursor = android.database.sqlite.SqliteWrapper.query(context, context.getContentResolver(),
                 uriBuilder.build(), null, null, null, null);
         if (cursor == null) {
+            ExternalLogger.i("[DownloadRequest] setErrorType() [end2] cursor is null");
             return;
         }
 
@@ -391,9 +409,11 @@ public class DownloadRequest extends MmsRequest {
                 android.database.sqlite.SqliteWrapper.update(context, context.getContentResolver(),
                         Telephony.MmsSms.PendingMessages.CONTENT_URI,
                         values, Telephony.MmsSms.PendingMessages._ID + "=" + id, null);
+                ExternalLogger.i("[DownloadRequest] setErrorType() update pending message msgId=" + msgId + ", pendingId=" + id + ", errorType=" + errorType);
             }
         } finally {
             cursor.close();
         }
+        ExternalLogger.i("[DownloadRequest] setErrorType() [end3]");
     }
 }

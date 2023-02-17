@@ -83,4 +83,22 @@ public class ExternalLogger {
             listener.e(message, tr);
         }
     }
+
+    public static String getHashCodeHex(Object obj) {
+        if (obj == null) {
+            return "null";
+        }
+        return Integer.toString(obj.hashCode(), 16);
+    }
+
+    public static String getSimpleName(Object obj) {
+        if (obj == null) {
+            return "null";
+        }
+        return obj.getClass().getSimpleName();
+    }
+
+    public static String getNameWithHash(Object obj) {
+        return getSimpleName(obj) + "@" + getHashCodeHex(obj);
+    }
 }

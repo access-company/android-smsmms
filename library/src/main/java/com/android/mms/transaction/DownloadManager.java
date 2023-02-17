@@ -19,6 +19,7 @@ import android.telephony.SmsManager;
 import android.text.TextUtils;
 
 import com.android.mms.MmsConfig;
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.BroadcastUtils;
 import com.klinker.android.send_message.MmsReceivedReceiver;
@@ -49,12 +50,15 @@ public class DownloadManager {
     }
 
     public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush, int subscriptionId) {
+        ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [start] uri=" + uri + ", location=" + location + ", byPush=" + byPush);
         if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
+            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1]");
             return;
         }
 
         // TransactionService can keep uri and location in memory while SmsManager download Mms.
         if (!isNotificationExist(context, location)) {
+            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end2]");
             return;
         }
 
@@ -97,8 +101,10 @@ public class DownloadManager {
             // configOverrides = smsManager.getCarrierConfigValues();
         }
 
+        ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() call system method. path=" + mDownloadFile.getPath());
         grantUriPermission(context, contentUri);
         smsManager.downloadMultimediaMessage(context, location, contentUri, configOverrides, pendingIntent);
+        ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end3]");
     }
 
     private void grantUriPermission(Context context, Uri contentUri) {
@@ -117,6 +123,7 @@ public class DownloadManager {
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            ExternalLogger.i("[MmsDownloadReceiver] onReceive() [start] uri=" + intent.getParcelableExtra(MmsReceivedReceiver.EXTRA_URI));
             context.unregisterReceiver(this);
 
             PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
@@ -126,10 +133,12 @@ public class DownloadManager {
             Intent newIntent = (Intent) intent.clone();
             newIntent.setAction(MmsReceivedReceiver.MMS_RECEIVED);
             BroadcastUtils.sendExplicitBroadcast(context, newIntent, MmsReceivedReceiver.MMS_RECEIVED);
+            ExternalLogger.i("[MmsDownloadReceiver] onReceive() [end]");
         }
     }
 
     public static void finishDownload(String location) {
+        ExternalLogger.d("[MmsDownloadReceiver] finishDownload() location=" + location);
         if (location != null) {
             mMap.remove(location);
         }

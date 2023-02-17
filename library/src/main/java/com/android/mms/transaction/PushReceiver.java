@@ -40,6 +40,7 @@ import com.android.mms.logs.LogTag;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.ContentType;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.DeliveryInd;
@@ -103,9 +104,11 @@ public class PushReceiver extends BroadcastReceiver {
             byte[] pushData = intent.getByteArrayExtra("data");
             PduParser parser = new PduParser(pushData);
             GenericPdu pdu = parser.parse();
+            ExternalLogger.i("[ReceivePushTask] doInBackground() pdu=" + ExternalLogger.getNameWithHash(pdu));
 
             if (null == pdu) {
                 Log.e(TAG, "Invalid PUSH data");
+                ExternalLogger.w("[ReceivePushTask] doInBackground() invalid Pdu");
                 return null;
             }
 
@@ -140,6 +143,7 @@ public class PushReceiver extends BroadcastReceiver {
                         ContentValues values = new ContentValues(1);
                         values.put(Mms.THREAD_ID, threadId);
                         SqliteWrapper.update(mContext, cr, uri, values, null, null);
+                        ExternalLogger.i("[ReceivePushTask] doInBackground() DELIVERY_IND or READ_ORIG_IND updated. threadId=" + threadId);
                         break;
                     }
                     case MESSAGE_TYPE_NOTIFICATION_IND: {
@@ -196,9 +200,11 @@ public class PushReceiver extends BroadcastReceiver {
                                     throw ex;
                                 }
                             }
+                            ExternalLogger.d("[ReceivePushTask] doInBackground() NOTIFICATION_IND uri=" + uri + ", location=" + location);
 
                             if (downloadedUrls.contains(location)) {
                                 Log.v(TAG, "already added this download, don't download again");
+                                ExternalLogger.i("[ReceivePushTask] doInBackground() NOTIFICATION_IND already added this download, don't download again");
                                 return null;
                             } else {
                                 downloadedUrls.add(location);
@@ -217,6 +223,7 @@ public class PushReceiver extends BroadcastReceiver {
                                 }
 
                                 if (useSystem) {
+                                    ExternalLogger.i("[ReceivePushTask] NOTIFICATION_IND doInBackground() start download message uri=" + uri);
                                     DownloadManager.getInstance().downloadMultimediaMessage(mContext, location, uri, true, subId);
                                 } else {
                                     Log.v(TAG, "receiving with lollipop method");
@@ -250,6 +257,7 @@ public class PushReceiver extends BroadcastReceiver {
                         } else if (LOCAL_LOGV) {
                             Log.v(TAG, "Skip downloading duplicate message: "
                                     + new String(nInd.getContentLocation()));
+                            ExternalLogger.i("[ReceivePushTask] doInBackground() NOTIFICATION_IND Skip downloading duplicate message: " + new String(nInd.getContentLocation()));
                         }
                         break;
                     }
@@ -258,8 +266,10 @@ public class PushReceiver extends BroadcastReceiver {
                 }
             } catch (MmsException e) {
                 Log.e(TAG, "Failed to save the data from PUSH: type=" + type, e);
+                ExternalLogger.e("[ReceivePushTask] doInBackground() MmsException pdu=" + ExternalLogger.getNameWithHash(pdu), e);
             } catch (RuntimeException e) {
                 Log.e(TAG, "Unexpected RuntimeException.", e);
+                ExternalLogger.e("[ReceivePushTask] doInBackground() RuntimeException pdu=" + ExternalLogger.getNameWithHash(pdu), e);
             }
 
             if (LOCAL_LOGV) {
@@ -282,6 +292,7 @@ public class PushReceiver extends BroadcastReceiver {
         Log.v(TAG, intent.getAction() + " " + intent.getType());
         if ((intent.getAction().equals(WAP_PUSH_DELIVER_ACTION) || intent.getAction().equals(WAP_PUSH_RECEIVED_ACTION))
                 && ContentType.MMS_MESSAGE.equals(intent.getType())) {
+            ExternalLogger.i("[PushReceiver] onReceive() [start]");
             if (LOCAL_LOGV) {
                 Log.v(TAG, "Received PUSH Intent: " + intent);
             }
@@ -293,6 +304,7 @@ public class PushReceiver extends BroadcastReceiver {
                 new ReceivePushTask(context, null).executeOnExecutor(PUSH_RECEIVER_EXECUTOR, intent);
 
                 Log.v("mms_receiver", context.getPackageName() + " received and aborted");
+                ExternalLogger.i("[PushReceiver] onReceive() [end] execute ReceivePushTask");
             } else {
                 clearAbortBroadcast();
                 Intent notificationBroadcast = new Intent(com.klinker.android.send_message.Transaction.NOTIFY_OF_MMS);
@@ -303,6 +315,7 @@ public class PushReceiver extends BroadcastReceiver {
                         com.klinker.android.send_message.Transaction.NOTIFY_OF_MMS);
 
                 Log.v("mms_receiver", context.getPackageName() + " received and not aborted");
+                ExternalLogger.i("[PushReceiver] onReceive() [end] broadcast NOTIFY_OF_MMS");
             }
         }
     }
