@@ -204,6 +204,15 @@ public class PduParser {
                     // multipart/signed
                     return retrieveConf;
                 } else {
+                    for (int i = 0; i < mBody.getPartsNum(); i++) {
+                        PduPart part = mBody.getPart(i);
+                        String partContentType = new String(part.getContentType());
+                        if (partContentType.equals(ContentType.TEXT_PLAIN) || partContentType.equals(ContentType.TEXT_HTML)) {
+                            // If a "text/html" or "text/plain" part exists in mBody, treat it as a parsing success
+                            return retrieveConf;
+                        }
+                    }
+
                     ExternalLogger.logMessage(LOG_TAG, "Unsupported ContentType: " + ctTypeStr);
                 }
                 return null;
