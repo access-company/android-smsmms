@@ -20,6 +20,7 @@ import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.ContentType;
 import com.google.android.mms.InvalidHeaderValueException;
 
+import com.google.android.mms.UnsupportedPartStructureException;
 import com.klinker.android.logger.Log;
 
 import java.io.ByteArrayInputStream;
@@ -204,7 +205,25 @@ public class PduParser {
                     // multipart/signed
                     return retrieveConf;
                 } else {
-                    ExternalLogger.logMessage(LOG_TAG, "Unsupported ContentType: " + ctTypeStr);
+                    StringBuilder partStructureDump = new StringBuilder();
+                    for (int i = 0; i < mBody.getPartsNum(); i++) {
+                        PduPart part = mBody.getPart(i);
+                        String partContentType = new String(part.getContentType());
+                        if (partContentType.equals(ContentType.TEXT_PLAIN) || partContentType.equals(ContentType.TEXT_HTML)) {
+                            // If a "text/html" or "text/plain" part exists in mBody, treat it as a parsing success
+                            return retrieveConf;
+                        }
+
+                        // Dump part structure for debug and future improvements.
+                        partStructureDump.append("  ").append(partContentType).append(": ").append(part.getDataLength()).append('\n');
+                    }
+
+                    try {
+                        // Throw exception to logging
+                        throw new UnsupportedPartStructureException("Unsupported ContentType: " + ctTypeStr + "\nParts: \n" + partStructureDump);
+                    } catch (UnsupportedPartStructureException e) {
+                        ExternalLogger.logException(LOG_TAG, e);
+                    }
                 }
                 return null;
             case PduHeaders.MESSAGE_TYPE_DELIVERY_IND:

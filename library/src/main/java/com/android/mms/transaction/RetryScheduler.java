@@ -29,6 +29,7 @@ import android.database.sqlite.SqliteWrapper;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.provider.Telephony;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
 import android.provider.Telephony.MmsSms.PendingMessages;
@@ -120,6 +121,12 @@ public class RetryScheduler implements Observer {
 
                     int retryIndex = cursor.getInt(cursor.getColumnIndexOrThrow(
                             PendingMessages.RETRY_INDEX)) + 1; // Count this time.
+
+                    int cursorErrorType = cursor.getInt(cursor.getColumnIndexOrThrow(PendingMessages.ERROR_TYPE));
+                    if (cursorErrorType == Telephony.MmsSms.ERR_TYPE_MMS_PROTO_PERMANENT) {
+                        // If a permanent error has already been set, do not retry
+                        return;
+                    }
 
                     // TODO Should exactly understand what was happened.
                     int errorType = MmsSms.ERR_TYPE_GENERIC;
