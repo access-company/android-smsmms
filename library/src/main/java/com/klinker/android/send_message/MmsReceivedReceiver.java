@@ -167,7 +167,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         if (networks != null) {
             for (Network net: networks) {
                 NetworkInfo info = connectivityManager.getNetworkInfo(net);
-                if (ConnectivityManager.TYPE_WIFI == info.getType() && info.isConnected()) {
+                if (info != null && ConnectivityManager.TYPE_WIFI == info.getType() && info.isConnected()) {
                     return true;
                 }
             }
