@@ -8,11 +8,19 @@ public class ExternalLogger {
     private static final CopyOnWriteArrayList<LoggingListener> sListener = new CopyOnWriteArrayList<LoggingListener>();
 
     public interface LoggingListener {
-        void onLogException(String tag, Throwable e);
-        void onLogMessage(String tag, String message);
+        void v(String message, Throwable tr);
+
+        void d(String message, Throwable tr);
+
+        void i(String message, Throwable tr);
+
+        void w(String message, Throwable tr);
+
+        void e(String message, Throwable tr);
     }
 
-    private ExternalLogger(){}
+    private ExternalLogger() {
+    }
 
     public static void addListener(LoggingListener listener) {
         sListener.add(listener);
@@ -22,15 +30,57 @@ public class ExternalLogger {
         sListener.remove(listener);
     }
 
-    public static void logException(String tag, Throwable e) {
-        for (LoggingListener listener: sListener) {
-            listener.onLogException(tag, e);
+    public static void v(String message) {
+        v(message, null);
+    }
+
+    public static void v(String message, Throwable tr) {
+        for (LoggingListener listener : sListener) {
+            listener.v(message, tr);
         }
     }
 
-    public static void logMessage(String tag, String message) {
-        for (LoggingListener listener: sListener) {
-            listener.onLogMessage(tag, message);
+    public static void d(String message) {
+        d(message, null);
+    }
+
+    public static void d(String message, Throwable tr) {
+        for (LoggingListener listener : sListener) {
+            listener.d(message, tr);
+        }
+    }
+
+    public static void i(String message) {
+        i(message, null);
+    }
+
+    public static void i(String message, Throwable tr) {
+        for (LoggingListener listener : sListener) {
+            listener.i(message, tr);
+        }
+    }
+
+    public static void w(String message) {
+        w(message, null);
+    }
+
+    public static void w(String message, Throwable tr) {
+        for (LoggingListener listener : sListener) {
+            listener.w(message, tr);
+        }
+    }
+
+    public static void w(Throwable tr) {
+        w(null, tr);
+    }
+
+    public static void e(String message) {
+        e(message, null);
+    }
+
+    public static void e(String message, Throwable tr) {
+        for (LoggingListener listener : sListener) {
+            listener.e(message, tr);
         }
     }
 }

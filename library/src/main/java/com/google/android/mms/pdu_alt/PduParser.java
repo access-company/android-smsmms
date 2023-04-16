@@ -222,7 +222,7 @@ public class PduParser {
                         // Throw exception to logging
                         throw new UnsupportedPartStructureException("Unsupported ContentType: " + ctTypeStr + "\nParts: \n" + partStructureDump);
                     } catch (UnsupportedPartStructureException e) {
-                        ExternalLogger.logException(LOG_TAG, e);
+                        ExternalLogger.e("[" + LOG_TAG + "] Unsupported ContentType", e);
                     }
                 }
                 return null;
