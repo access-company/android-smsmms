@@ -118,7 +118,9 @@ public class PduParser {
      *         null if parsing error happened or mandatory fields are not set.
      */
     public GenericPdu parse(){
+        ExternalLogger.i("[PduParser] parse() [start]");
         if (mPduDataStream == null) {
+            ExternalLogger.w("[PduParser] parse() [end] mPduDataStream is null");
             return null;
         }
 
@@ -126,6 +128,7 @@ public class PduParser {
         mHeaders = parseHeaders(mPduDataStream);
         if (null == mHeaders) {
             // Parse headers failed.
+            ExternalLogger.w("[PduParser] parse() [end] mHeaders is null");
             return null;
         }
 
@@ -135,6 +138,7 @@ public class PduParser {
         /* check mandatory header fields */
         if (false == checkMandatoryHeader(mHeaders)) {
             log("check mandatory headers failed!");
+            ExternalLogger.w("[PduParser] parse() [end] checkMandatoryHeader is false");
             return null;
         }
 
@@ -144,6 +148,7 @@ public class PduParser {
             mBody = parseParts(mPduDataStream);
             if (null == mBody) {
                 // Parse parts failed.
+                ExternalLogger.w("[PduParser] parse() [end] mBody is null");
                 return null;
             }
         }
@@ -154,12 +159,14 @@ public class PduParser {
                     Log.v(LOG_TAG, "parse: MESSAGE_TYPE_SEND_REQ");
                 }
                 SendReq sendReq = new SendReq(mHeaders, mBody);
+                ExternalLogger.i("[PduParser] parse() [end] sendReq=" + ExternalLogger.getNameWithHash(sendReq));
                 return sendReq;
             case PduHeaders.MESSAGE_TYPE_SEND_CONF:
                 if (LOCAL_LOGV) {
                     Log.v(LOG_TAG, "parse: MESSAGE_TYPE_SEND_CONF");
                 }
                 SendConf sendConf = new SendConf(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] sendConf=" + ExternalLogger.getNameWithHash(sendConf));
                 return sendConf;
             case PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND:
                 if (LOCAL_LOGV) {
@@ -167,6 +174,7 @@ public class PduParser {
                 }
                 NotificationInd notificationInd =
                     new NotificationInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] notificationInd=" + ExternalLogger.getNameWithHash(notificationInd));
                 return notificationInd;
             case PduHeaders.MESSAGE_TYPE_NOTIFYRESP_IND:
                 if (LOCAL_LOGV) {
@@ -174,6 +182,7 @@ public class PduParser {
                 }
                 NotifyRespInd notifyRespInd =
                     new NotifyRespInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] notifyRespInd=" + ExternalLogger.getNameWithHash(notifyRespInd));
                 return notifyRespInd;
             case PduHeaders.MESSAGE_TYPE_RETRIEVE_CONF:
                 if (LOCAL_LOGV) {
@@ -184,15 +193,18 @@ public class PduParser {
 
                 byte[] contentType = retrieveConf.getContentType();
                 if (null == contentType) {
+                    ExternalLogger.i("[PduParser] parse() [end] retrieveConf: contentType is null");
                     return null;
                 }
                 String ctTypeStr = new String(contentType);
+                ExternalLogger.i("[PduParser] parse() ContentType=" + ctTypeStr);
                 if (ctTypeStr.equals(ContentType.MULTIPART_MIXED)
                         || ctTypeStr.equals(ContentType.MULTIPART_RELATED)
                         || ctTypeStr.equals(ContentType.MULTIPART_ALTERNATIVE)) {
                     // The MMS content type must be "application/vnd.wap.multipart.mixed"
                     // or "application/vnd.wap.multipart.related"
                     // or "application/vnd.wap.multipart.alternative"
+                    ExternalLogger.i("[PduParser] parse() [end] retrieveConf1=" + ExternalLogger.getNameWithHash(retrieveConf));
                     return retrieveConf;
                 } else if (ctTypeStr.equals(ContentType.MULTIPART_ALTERNATIVE)) {
                     // "application/vnd.wap.multipart.alternative"
@@ -200,9 +212,11 @@ public class PduParser {
                     PduPart firstPart = mBody.getPart(0);
                     mBody.removeAll();
                     mBody.addPart(0, firstPart);
+                    ExternalLogger.i("[PduParser] parse() [end] retrieveConf2=" + ExternalLogger.getNameWithHash(retrieveConf));
                     return retrieveConf;
                 } else if (ctTypeStr.equals(ContentType.MULTIPART_SIGNED)) {
                     // multipart/signed
+                    ExternalLogger.i("[PduParser] parse() [end] retrieveConf3=" + ExternalLogger.getNameWithHash(retrieveConf));
                     return retrieveConf;
                 } else {
                     StringBuilder partStructureDump = new StringBuilder();
@@ -222,9 +236,12 @@ public class PduParser {
                         // Throw exception to logging
                         throw new UnsupportedPartStructureException("Unsupported ContentType: " + ctTypeStr + "\nParts: \n" + partStructureDump);
                     } catch (UnsupportedPartStructureException e) {
-                        ExternalLogger.logException(LOG_TAG, e);
+                        ExternalLogger.e("[" + LOG_TAG + "] Unsupported ContentType", e);
                     }
+
+                    ExternalLogger.i("[PduParser] parse() Unsupported ContentType: " + ctTypeStr + ", Structure: \n" + partStructureDump);
                 }
+                ExternalLogger.i("[PduParser] parse() [end] retrieveConf: Unsupported ContentType");
                 return null;
             case PduHeaders.MESSAGE_TYPE_DELIVERY_IND:
                 if (LOCAL_LOGV) {
@@ -232,6 +249,7 @@ public class PduParser {
                 }
                 DeliveryInd deliveryInd =
                     new DeliveryInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] deliveryInd=" + ExternalLogger.getNameWithHash(deliveryInd));
                 return deliveryInd;
             case PduHeaders.MESSAGE_TYPE_ACKNOWLEDGE_IND:
                 if (LOCAL_LOGV) {
@@ -239,6 +257,7 @@ public class PduParser {
                 }
                 AcknowledgeInd acknowledgeInd =
                     new AcknowledgeInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] acknowledgeInd=" + ExternalLogger.getNameWithHash(acknowledgeInd));
                 return acknowledgeInd;
             case PduHeaders.MESSAGE_TYPE_READ_ORIG_IND:
                 if (LOCAL_LOGV) {
@@ -246,6 +265,7 @@ public class PduParser {
                 }
                 ReadOrigInd readOrigInd =
                     new ReadOrigInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] readOrigInd=" + ExternalLogger.getNameWithHash(readOrigInd));
                 return readOrigInd;
             case PduHeaders.MESSAGE_TYPE_READ_REC_IND:
                 if (LOCAL_LOGV) {
@@ -253,9 +273,11 @@ public class PduParser {
                 }
                 ReadRecInd readRecInd =
                     new ReadRecInd(mHeaders);
+                ExternalLogger.i("[PduParser] parse() [end] readRecInd=" + ExternalLogger.getNameWithHash(readRecInd));
                 return readRecInd;
             default:
                 log("Parser doesn't support this message type in this version!");
+                ExternalLogger.i("[PduParser] parse() [end] Parser doesn't support this message type in this version!");
             return null;
         }
     }
@@ -932,6 +954,7 @@ public class PduParser {
             if (dataLength > 0) {
                 byte[] partData = new byte[dataLength];
                 String partContentType = new String(part.getContentType());
+                ExternalLogger.d("[PduParser] parseParts() partContentType=" + partContentType);
                 pduDataStream.read(partData, 0, dataLength);
                 if (partContentType.equalsIgnoreCase(ContentType.MULTIPART_ALTERNATIVE)) {
                     // parse "multipart/vnd.wap.multipart.alternative".

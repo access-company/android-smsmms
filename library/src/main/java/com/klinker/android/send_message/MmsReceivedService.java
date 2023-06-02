@@ -18,6 +18,7 @@ import com.android.mms.transaction.DownloadManager;
 import com.android.mms.transaction.HttpUtils;
 import com.android.mms.transaction.RetryScheduler;
 import com.android.mms.transaction.TransactionSettings;
+import com.android.mms.util.ExternalLogger;
 import com.android.mms.util.SendingProgressTokenManager;
 import com.google.android.mms.InvalidHeaderValueException;
 import com.google.android.mms.MmsException;
@@ -135,6 +136,7 @@ public class MmsReceivedService extends IntentService {
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
         if (httpError != 200) {
             Uri uri = intent.getParcelableExtra(EXTRA_URI);
+            ExternalLogger.w("[MmsReceivedService] handleHttpError() schedule retry. HTTP status=" + httpError + ", uri=" + uri);
             RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
@@ -308,6 +310,7 @@ public class MmsReceivedService extends IntentService {
         final GenericPdu pdu =
                 (new PduParser(response, new MmsConfig.Overridden(new MmsConfig(context), null).
                         getSupportMmsContentDisposition())).parse();
+        ExternalLogger.i("[MmsReceivedService] getNotificationTask() pdu=" + ExternalLogger.getNameWithHash(pdu));
         if (pdu == null || !(pdu instanceof RetrieveConf)) {
             android.util.Log.e(TAG, "MmsReceivedReceiver.sendNotification failed to parse pdu");
             return null;

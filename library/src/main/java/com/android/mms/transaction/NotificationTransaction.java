@@ -32,6 +32,7 @@ import android.telephony.TelephonyManager;
 import com.android.mms.logs.LogTag;
 import com.android.mms.MmsConfig;
 import com.android.mms.util.DownloadManager;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.GenericPdu;
 import com.google.android.mms.pdu_alt.NotificationInd;
@@ -160,6 +161,7 @@ public class NotificationTransaction extends Transaction implements Runnable {
             if (LOCAL_LOGV) {
                 Log.v(TAG, "Notification transaction launched: " + this);
             }
+            ExternalLogger.i("[NotificationTransaction] run() [start] transaction=" + ExternalLogger.getNameWithHash(this) + ", uri=" + mUri);
 
             // By default, we set status to STATUS_DEFERRED because we
             // should response MMSC with STATUS_DEFERRED when we cannot
@@ -169,6 +171,7 @@ public class NotificationTransaction extends Transaction implements Runnable {
             if (!autoDownload) {
                 downloadManager.markState(mUri, DownloadManager.STATE_UNSTARTED);
                 sendNotifyRespInd(status);
+                ExternalLogger.i("[NotificationTransaction] run() [end1] not autoDownload");
                 return;
             }
 
@@ -185,13 +188,16 @@ public class NotificationTransaction extends Transaction implements Runnable {
                 retrieveConfData = getPdu(mContentLocation);
             } catch (IOException e) {
                 mTransactionState.setState(FAILED);
+                ExternalLogger.e("[NotificationTransaction] run() IOException", e);
             }
 
             if (retrieveConfData != null) {
                 GenericPdu pdu = new PduParser(retrieveConfData).parse();
+                ExternalLogger.i("[NotificationTransaction] run() pdu=" + ExternalLogger.getNameWithHash(pdu));
                 if ((pdu == null) || (pdu.getMessageType() != MESSAGE_TYPE_RETRIEVE_CONF)) {
                     Log.e(TAG, "Invalid M-RETRIEVE.CONF PDU. " +
                             (pdu != null ? "message type: " + pdu.getMessageType() : "null pdu"));
+                    ExternalLogger.w("[NotificationTransaction] run() Invalid M-RETRIEVE.CONF PDU. " + (pdu != null ? "message type: " + pdu.getMessageType() : "null pdu"));
                     mTransactionState.setState(FAILED);
                     status = STATUS_UNRECOGNIZED;
                 } else {
@@ -199,6 +205,7 @@ public class NotificationTransaction extends Transaction implements Runnable {
                     PduPersister p = PduPersister.getPduPersister(mContext);
                     Uri uri = p.persist(pdu, Inbox.CONTENT_URI, true,
                             com.klinker.android.send_message.Transaction.settings.getGroup(), null, com.klinker.android.send_message.Transaction.settings.getSubscriptionId());
+                    ExternalLogger.d("[NotificationTransaction] run() new uri=" + uri);
 
                     // Use local time instead of PDU time
                     ContentValues values = new ContentValues(2);
@@ -219,9 +226,11 @@ public class NotificationTransaction extends Transaction implements Runnable {
                     SqliteWrapper.delete(mContext, mContext.getContentResolver(),
                                          mUri, null, null);
                     Log.v(TAG, "NotificationTransaction received new mms message: " + uri);
+                    ExternalLogger.d("[NotificationTransaction] run() delete M-NotifyResp.ind from Inbox. uri=" + mUri);
                     // Delete obsolete threads
                     SqliteWrapper.delete(mContext, mContext.getContentResolver(),
                             Threads.OBSOLETE_THREADS_URI, null, null);
+                    ExternalLogger.d("[NotificationTransaction] run() Delete obsolete threads. uri=" + Threads.OBSOLETE_THREADS_URI);
 
                     // Notify observers with newly received MM.
                     mUri = uri;
@@ -253,17 +262,21 @@ public class NotificationTransaction extends Transaction implements Runnable {
             sendNotifyRespInd(status);
         } catch (Throwable t) {
             Log.e(TAG, "error", t);
+            ExternalLogger.e("[NotificationTransaction] run() exception", t);
         } finally {
             mTransactionState.setContentUri(mUri);
             if (!autoDownload) {
                 // Always mark the transaction successful for deferred
                 // download since any error here doesn't make sense.
                 mTransactionState.setState(SUCCESS);
+                ExternalLogger.d("[NotificationTransaction] run() set success");
             }
             if (mTransactionState.getState() != SUCCESS) {
                 mTransactionState.setState(FAILED);
                 Log.e(TAG, "NotificationTransaction failed.");
+                ExternalLogger.d("[NotificationTransaction] run() set failed");
             }
+            ExternalLogger.i("[NotificationTransaction] run() [end] transaction=" + ExternalLogger.getNameWithHash(this) + ", uri=" + mUri);
             notifyObservers();
         }
     }

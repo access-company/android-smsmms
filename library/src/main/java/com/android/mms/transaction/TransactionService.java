@@ -47,6 +47,7 @@ import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.MmsRequestManager;
 import com.android.mms.util.DownloadManager;
+import com.android.mms.util.ExternalLogger;
 import com.android.mms.util.RateController;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu_alt.GenericPdu;
@@ -176,6 +177,7 @@ public class TransactionService extends Service implements Observer {
 
     @Override
     public void onCreate() {
+        ExternalLogger.i("[TransactionService] onCreate() [start]");
         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
             Log.v(TAG, "Creating TransactionService");
         }
@@ -183,6 +185,7 @@ public class TransactionService extends Service implements Observer {
         if (!Utils.isDefaultSmsApp(this)) {
             Log.v(TAG, "not default app, so exiting");
             stopSelf();
+            ExternalLogger.w("[TransactionService] onCreate() [end1] not default app");
             return;
         }
 
@@ -192,6 +195,7 @@ public class TransactionService extends Service implements Observer {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         registerReceiver(mReceiver, intentFilter);
+        ExternalLogger.i("[TransactionService] onCreate() [end]");
     }
 
     private void initServiceHandler() {
@@ -207,6 +211,7 @@ public class TransactionService extends Service implements Observer {
 
     @Override
     public int onStartCommand(final Intent intent, int flags, int startId) {
+        ExternalLogger.i("[TransactionService] onStartCommand()");
         if (intent != null) {
 //            if (intent.getBooleanExtra(TransactionBundle.LOLLIPOP_RECEIVING, false)) {
 //                lollipopReceiving = true;
@@ -260,6 +265,7 @@ public class TransactionService extends Service implements Observer {
     }
 
     public void onNewIntent(Intent intent, int serviceId) {
+        ExternalLogger.i("[TransactionService] onNewIntent() [start]");
         try {
             mobileDataEnabled = Utils.isMobileDataEnabled(this);
         } catch (Exception e) {
@@ -274,6 +280,7 @@ public class TransactionService extends Service implements Observer {
         if (mConnMgr == null) {
             endMmsConnectivity();
             stopSelf(serviceId);
+            ExternalLogger.w("[TransactionService] onNewIntent() [end1] could not get Connectivity Manager");
             return;
         }
 
@@ -286,6 +293,7 @@ public class TransactionService extends Service implements Observer {
         }
 
         String action = intent.getAction();
+        ExternalLogger.d("[TransactionService] onNewIntent() action=" + action + ", networkAvailable=" + !noNetwork);
         if (ACTION_ONALARM.equals(action) || ACTION_ENABLE_AUTO_RETRIEVE.equals(action) ||
                 (intent.getExtras() == null)) {
             // Scan database to find all pending operations.
@@ -294,6 +302,7 @@ public class TransactionService extends Service implements Observer {
             if (cursor != null) {
                 try {
                     int count = cursor.getCount();
+                    ExternalLogger.d("[TransactionService] onNewIntent() pending messages count=" + count);
 
                     if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                         Log.v(TAG, "onNewIntent: cursor.count=" + count + " action=" + action);
@@ -305,6 +314,7 @@ public class TransactionService extends Service implements Observer {
                         }
                         RetryScheduler.setRetryAlarm(this);
                         stopSelfIfIdle(serviceId);
+                        ExternalLogger.i("[TransactionService] onNewIntent() [end2] no pending messages.");
                         return;
                     }
 
@@ -332,13 +342,14 @@ public class TransactionService extends Service implements Observer {
                                 try {
                                     Uri uri = ContentUris.withAppendedId(Mms.CONTENT_URI,
                                             cursor.getLong(columnIndexOfMsgId));
+                                    ExternalLogger.d("[TransactionService] onNewIntent() start download message uri=" + uri);
                                     com.android.mms.transaction.DownloadManager.getInstance().
                                             downloadMultimediaMessage(this, PushReceiver.getContentLocation(this, uri), uri, false, subId);
 
                                     // can't handle many messages at once.
                                     break;
                                 } catch (MmsException e) {
-                                    e.printStackTrace();
+                                    ExternalLogger.e("[TransactionService] onNewIntent() useSystem MmsException", e);
                                 }
                             } else {
                                 try {
@@ -365,8 +376,10 @@ public class TransactionService extends Service implements Observer {
                             Log.v(TAG, "onNewIntent: msgType=" + msgType + " transactionType=" +
                                     transactionType);
                         }
+                        ExternalLogger.d("[TransactionService] onNewIntent() msgType=" + msgType + ", transactionType=" + transactionType);
                         if (noNetwork) {
                             onNetworkUnavailable(serviceId, transactionType);
+                            ExternalLogger.w("[TransactionService] onNewIntent() [end3] no network");
                             return;
                         }
                         switch (transactionType) {
@@ -380,6 +393,7 @@ public class TransactionService extends Service implements Observer {
                                 int failureType = cursor.getInt(
                                         cursor.getColumnIndexOrThrow(
                                                 PendingMessages.ERROR_TYPE));
+                                ExternalLogger.d("[TransactionService] onNewIntent() RETRIEVE_TRANSACTION: failureType=" + failureType);
                                 try {
                                     DownloadManager.init(this);
                                     DownloadManager downloadManager = DownloadManager.getInstance();
@@ -405,6 +419,7 @@ public class TransactionService extends Service implements Observer {
                                     }
                                 } catch (Exception e) {
                                     e.printStackTrace();
+                                    ExternalLogger.e("[TransactionService] onNewIntent() RETRIEVE_TRANSACTION exception", e);
                                 }
 
                                 // Logic is twisty. If there's no failure or the failure
@@ -415,6 +430,7 @@ public class TransactionService extends Service implements Observer {
                                     if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                                         Log.v(TAG, "onNewIntent: skipping - permanent error");
                                     }
+                                    ExternalLogger.d("[TransactionService] onNewIntent() RETRIEVE_TRANSACTION permanent error");
                                     break;
                                 }
                                 if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
@@ -431,6 +447,7 @@ public class TransactionService extends Service implements Observer {
                                 if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                                     Log.v(TAG, "onNewIntent: launchTransaction uri=" + uri);
                                 }
+                                ExternalLogger.d("[TransactionService] onNewIntent() default: launchTransaction uri=" + uri);
                                 launchTransaction(serviceId, args, false);
                                 break;
                         }
@@ -453,6 +470,7 @@ public class TransactionService extends Service implements Observer {
             TransactionBundle args = new TransactionBundle(intent.getExtras());
             launchTransaction(serviceId, args, noNetwork);
         }
+        ExternalLogger.i("[TransactionService] onNewIntent() [end]");
     }
 
     private void stopSelfIfIdle(int startId) {
@@ -838,6 +856,7 @@ public class TransactionService extends Service implements Observer {
                                     byte[] pushData = args.getPushData();
                                     PduParser parser = new PduParser(pushData);
                                     GenericPdu ind = parser.parse();
+                                    ExternalLogger.i("[ServiceHandler] handleMessage() ind=" + ExternalLogger.getNameWithHash(ind));
 
                                     int type = PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND;
                                     if ((ind != null) && (ind.getMessageType() == type)) {
@@ -858,6 +877,7 @@ public class TransactionService extends Service implements Observer {
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                                     Uri u = Uri.parse(args.getUri());
+                                    ExternalLogger.d("[ServiceHandler] handleMessage() uri=" + u);
                                     com.android.mms.transaction.DownloadManager.getInstance().
                                             downloadMultimediaMessage(TransactionService.this,
                                                     ((RetrieveTransaction) transaction).getContentLocation(TransactionService.this, u), u, false, Settings.DEFAULT_SUBSCRIPTION_ID);
@@ -943,6 +963,7 @@ public class TransactionService extends Service implements Observer {
                                 TransactionService.this.getContentResolver(),
                                 uri, values, null, null);
                     }
+                    ExternalLogger.d("[ServiceHandler] markAllPendingTransactionsAsFailed() transaction=" + ExternalLogger.getNameWithHash(transaction) + ", uri=" + transaction.mTransactionState.getContentUri());
                     transaction.notifyObservers();
                 }
             }
