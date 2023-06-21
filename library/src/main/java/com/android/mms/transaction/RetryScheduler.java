@@ -225,6 +225,7 @@ public class RetryScheduler implements Observer {
                                 }
                             }
 
+                            ExternalLogger.d("[RetryScheduler] scheduleRetry() threadId=" + threadId);
                             if (threadId != -1) {
                                 // Downloading process is permanently failed.
                                 markMmsFailed(mContext);
@@ -268,6 +269,7 @@ public class RetryScheduler implements Observer {
     }
 
     private void markMmsFailed(final Context context) {
+        ExternalLogger.d("[RetryScheduler] markMmsFailed() [start]");
         Cursor query = context.getContentResolver().query(Mms.CONTENT_URI, new String[]{Mms._ID}, null, null, "date desc");
 
         try {
@@ -279,6 +281,7 @@ public class RetryScheduler implements Observer {
             ContentValues values = new ContentValues();
             values.put(Mms.MESSAGE_BOX, Mms.MESSAGE_BOX_FAILED);
             String where = Mms._ID + " = '" + id + "'";
+            ExternalLogger.i("[RetryScheduler] markMmsFailed() move message to failed box. messageId=" + id);
             context.getContentResolver().update(Mms.CONTENT_URI, values, where, null);
 
             BroadcastUtils.sendExplicitBroadcast(
@@ -292,7 +295,9 @@ public class RetryScheduler implements Observer {
             BroadcastUtils.sendExplicitBroadcast(
                     mContext, new Intent(), com.klinker.android.send_message.Transaction.MMS_ERROR);
         } catch (Exception e) {
+            ExternalLogger.e("[RetryScheduler] markMmsFailed() exception ", e);
         }
+        ExternalLogger.d("[RetryScheduler] markMmsFailed() [end]");
     }
 
     private int getResponseStatus(long msgID) {
@@ -357,7 +362,7 @@ public class RetryScheduler implements Observer {
                     AlarmManager am = (AlarmManager) context.getSystemService(
                             Context.ALARM_SERVICE);
                     am.set(AlarmManager.RTC, retryAt, operation);
-                    ExternalLogger.i("[RetryScheduler] setRetryAlarm() Next retry is scheduled at" + (retryAt - System.currentTimeMillis()) + "ms from now");
+                    ExternalLogger.i("[RetryScheduler] setRetryAlarm() Next retry is scheduled at " + (retryAt - System.currentTimeMillis()) + "ms from now");
 
                     if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
                         Log.v(TAG, "Next retry is scheduled at"
