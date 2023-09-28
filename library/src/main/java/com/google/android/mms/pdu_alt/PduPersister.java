@@ -41,6 +41,7 @@ import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 
 import com.android.mms.service_alt.SubscriptionIdChecker;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.ContentType;
 import com.google.android.mms.InvalidHeaderValueException;
 import com.google.android.mms.MmsException;
@@ -297,9 +298,13 @@ public class PduPersister {
     public static PduPersister getPduPersister(Context context) {
         if ((sPersister == null)) {
             sPersister = new PduPersister(context);
+            ExternalLogger.d("[PduPersister] getPduPersister() new instance: " + ExternalLogger.getNameWithHash(sPersister));
         } else if (!context.equals(sPersister.mContext)) {
             sPersister.release();
             sPersister = new PduPersister(context);
+            ExternalLogger.d("[PduPersister] getPduPersister() new instance with release: " + ExternalLogger.getNameWithHash(sPersister));
+        } else {
+            ExternalLogger.d("[PduPersister] getPduPersister() use exist instance: " + ExternalLogger.getNameWithHash(sPersister));
         }
 
         return sPersister;
@@ -1605,6 +1610,7 @@ public class PduPersister {
      * Remove all objects in the temporary path.
      */
     public void release() {
+        ExternalLogger.d("[PduPersister] release()");
         Uri uri = Uri.parse(TEMPORARY_DRM_OBJECT_URI);
         SqliteWrapper.delete(mContext, mContentResolver, uri, null, null);
     }

@@ -25,6 +25,7 @@ import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 
 import com.android.mms.util.ExternalLogger;
+import com.google.android.mms.pdu_alt.PduPersister;
 import com.klinker.android.logger.Log;
 import android.widget.Toast;
 
@@ -89,17 +90,24 @@ public final class SqliteWrapper {
     public static int update(Context context, ContentResolver resolver, Uri uri,
             ContentValues values, String where, String[] selectionArgs) {
         try {
+            ExternalLogger.d("[SqliteWrapper] update() uri=" + uri);
             return resolver.update(uri, values, where, selectionArgs);
         } catch (SQLiteException e) {
             Log.e(TAG, "Catch a SQLiteException when update: ", e);
             checkSQLiteException(context, e);
+            ExternalLogger.e("[SqliteWrapper] update() exception uri=" + uri, e);
             return -1;
         }
     }
 
     public static int delete(Context context, ContentResolver resolver, Uri uri,
             String where, String[] selectionArgs) {
-        ExternalLogger.d("[SqliteWrapper] delete() uri=" + uri);
+        if (uri.toString().equals(PduPersister.TEMPORARY_DRM_OBJECT_URI)) {
+            ExternalLogger.d("[SqliteWrapper] delete() temporary drm object");
+        } else {
+            ExternalLogger.d("[SqliteWrapper] delete() uri=" + uri);
+        }
+
         try {
             return resolver.delete(uri, where, selectionArgs);
         } catch (SQLiteException e) {
