@@ -228,7 +228,7 @@ public class RetryScheduler implements Observer {
                             ExternalLogger.d("[RetryScheduler] scheduleRetry() threadId=" + threadId);
                             if (threadId != -1) {
                                 // Downloading process is permanently failed.
-                                markMmsFailed(mContext);
+                                markMmsFailed(mContext, msgId);
                             }
 
                             DownloadManager.init(mContext.getApplicationContext());
@@ -241,7 +241,7 @@ public class RetryScheduler implements Observer {
                             readValues.put(Mms.READ, 0);
                             SqliteWrapper.update(mContext, mContext.getContentResolver(),
                                     uri, readValues, null, null);
-                            markMmsFailed(mContext);
+                            markMmsFailed(mContext, msgId);
                             ExternalLogger.i("[RetryScheduler] scheduleRetry() Mark the failed message as unread");
                         }
                     }
@@ -268,20 +268,14 @@ public class RetryScheduler implements Observer {
         ExternalLogger.i("[RetryScheduler] scheduleRetry() [end]");
     }
 
-    private void markMmsFailed(final Context context) {
+    private void markMmsFailed(final Context context, long msgId) {
         ExternalLogger.d("[RetryScheduler] markMmsFailed() [start]");
-        Cursor query = context.getContentResolver().query(Mms.CONTENT_URI, new String[]{Mms._ID}, null, null, "date desc");
-
         try {
-            query.moveToFirst();
-            String id = query.getString(query.getColumnIndex(Mms._ID));
-            query.close();
-
             // mark message as failed
             ContentValues values = new ContentValues();
             values.put(Mms.MESSAGE_BOX, Mms.MESSAGE_BOX_FAILED);
-            String where = Mms._ID + " = '" + id + "'";
-            ExternalLogger.i("[RetryScheduler] markMmsFailed() move message to failed box. messageId=" + id);
+            String where = Mms._ID + " = '" + msgId + "'";
+            ExternalLogger.i("[RetryScheduler] markMmsFailed() move message to failed box. messageId=" + msgId);
             context.getContentResolver().update(Mms.CONTENT_URI, values, where, null);
 
             BroadcastUtils.sendExplicitBroadcast(
