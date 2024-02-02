@@ -154,20 +154,15 @@ public class DownloadManager {
             return;
         }
 
-        // Notify user if downloading permanently failed.
+        // Log a message if the download has permanently failed.
         if (state == STATE_PERMANENT_FAILURE) {
             ExternalLogger.i("[DownloadManager] markState() permanent failure");
-            mHandler.post(new Runnable() {
-                public void run() {
-                    try {
-                        Toast.makeText(mContext, getMessage(uri),
-                                Toast.LENGTH_LONG).show();
-                    } catch (MmsException e) {
-                        Log.e(TAG, e.getMessage(), e);
-                        ExternalLogger.i("[DownloadManager] markState() permanent failure exception", e);
-                    }
-                }
-            });
+            try {
+                ExternalLogger.i("[DownloadManager] " + getMessage(uri));
+            } catch (MmsException e) {
+                Log.e(TAG, e.getMessage(), e);
+                ExternalLogger.i("[DownloadManager] markState() permanent failure exception", e);
+            }
         } else if (!mAutoDownload) {
             state |= DEFERRED_MASK;
         }
