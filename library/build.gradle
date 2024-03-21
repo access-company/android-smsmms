@@ -1,5 +1,9 @@
 apply plugin: 'com.android.library'
 
+repositories {
+    mavenCentral()
+}
+
 dependencies {
     implementation 'com.klinkerapps:logger:1.0.3'
     implementation 'com.squareup.okhttp:okhttp:2.5.0'
