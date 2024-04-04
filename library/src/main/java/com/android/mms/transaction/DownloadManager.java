@@ -26,6 +26,8 @@ import com.klinker.android.send_message.MmsReceivedReceiver;
 import com.klinker.android.send_message.SmsManagerFactory;
 
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,7 +68,40 @@ public class DownloadManager {
         mMap.put(location, receiver);
 
         // Use unique action in order to avoid cancellation of notifying download result.
-        context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+        // If targetSdkVersion is 34, Runtime-registered broadcasts receivers must specify export behavior
+        try {
+            int tiramisuApiLevel = (Integer) Build.VERSION_CODES.class.getField("TIRAMISU").get(null);
+            int receiverExported = (Integer) Context.class.getField("RECEIVER_EXPORTED").get(null);
+
+            if (Build.VERSION.SDK_INT >= tiramisuApiLevel) {
+                Method registerReceiverMethod = Context.class.getMethod(
+                        "registerReceiver",
+                        BroadcastReceiver.class,
+                        IntentFilter.class,
+                        int.class
+                );
+                registerReceiverMethod.invoke(
+                        context.getApplicationContext(),
+                        receiver,
+                        new IntentFilter(receiver.mAction),
+                        receiverExported
+                );
+            } else {
+                context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+            }
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
+        }
 
         Log.v(TAG, "receiving with system method");
         final String fileName = "download." + String.valueOf(Math.abs(new Random().nextLong())) + ".dat";
