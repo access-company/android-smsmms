@@ -275,7 +275,7 @@ public class Transaction {
                 sentIntent.putExtra(SENT_SMS_BUNDLE, sentMessageParcelable);
                 // Workaround for using PendingIntent.FLAG_MUTABLE until compileSdkVersion is updated to 31.
                 // Actual value from:
-                // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+                // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#247
                 final int flagImmutable = 1 << 26;
                 @SuppressLint("WrongConstant")
                 PendingIntent sentPI = PendingIntent.getBroadcast(
@@ -710,7 +710,7 @@ public class Transaction {
             intent.putExtra(MmsSentReceiver.EXTRA_FILE_PATH, mSendFile.getPath());
             // Workaround for using PendingIntent.FLAG_MUTABLE until compileSdkVersion is updated to 31.
             // Actual value from:
-            // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+            // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#247
             final int flagImmutable = 1 << 26;
             @SuppressLint("WrongConstant")
             final PendingIntent pendingIntent = PendingIntent.getBroadcast(

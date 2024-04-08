@@ -348,7 +348,7 @@ public class RetryScheduler implements Observer {
 
                     // Workaround for using PendingIntent.FLAG_IMMUTABLE until compileSdkVersion is updated to 31.
                     // Actual value from:
-                    // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+                    // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#247
                     final int flagImmutable = 1 << 26;
                     @SuppressLint("WrongConstant")
                     PendingIntent operation = PendingIntent.getService(
