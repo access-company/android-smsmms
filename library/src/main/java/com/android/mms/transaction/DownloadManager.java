@@ -89,17 +89,7 @@ public class DownloadManager {
             } else {
                 context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
             }
-        } catch (NoSuchFieldException e) {
-            e.printStackTrace();
-            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-            context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
+        } catch (ReflectiveOperationException e) {
             context.getApplicationContext().registerReceiver(receiver, new IntentFilter(receiver.mAction));
         }
 
