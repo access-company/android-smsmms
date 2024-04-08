@@ -55,6 +55,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.util.*;
 
 /**
@@ -512,7 +513,26 @@ public class Transaction {
 
                 };
 
-                context.registerReceiver(receiver, filter);
+                // If targetSdkVersion is 34, Runtime-registered broadcasts receivers must specify export behavior
+                int tiramisuApiLevel = (Integer) Build.VERSION_CODES.class.getField("TIRAMISU").get(null);
+                int receiverExported = (Integer) Context.class.getField("RECEIVER_EXPORTED").get(null);
+
+                if (Build.VERSION.SDK_INT >= tiramisuApiLevel) {
+                    Method registerReceiverMethod = Context.class.getMethod(
+                            "registerReceiver",
+                            BroadcastReceiver.class,
+                            IntentFilter.class,
+                            int.class
+                    );
+                    registerReceiverMethod.invoke(
+                            context,
+                            receiver,
+                            filter,
+                            receiverExported
+                    );
+                } else {
+                    context.registerReceiver(receiver, filter);
+                }
             } catch (Throwable e) {
                 Log.e(TAG, "exception thrown", e);
                 ExternalLogger.e("[Transaction] sendMmsMessage() KitKat Exception", e);
