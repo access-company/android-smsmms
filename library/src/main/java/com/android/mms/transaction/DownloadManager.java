@@ -113,7 +113,7 @@ public class DownloadManager {
         final int flagImmutable = 1 << 26;
         @SuppressLint("WrongConstant")
         final PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                context, 0, download, PendingIntent.FLAG_CANCEL_CURRENT | flagImmutable);
+                context, 0, download, PendingIntent.FLAG_CANCEL_CURRENT | flagImmutable); // Set the FLAG_IMMUTABLE because the "download" is an implicit intent.
 
         final SmsManager smsManager = SmsManagerFactory.createSmsManager(subscriptionId);
 

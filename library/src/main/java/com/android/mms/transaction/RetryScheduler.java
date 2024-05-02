@@ -346,13 +346,13 @@ public class RetryScheduler implements Observer {
                     Intent service = new Intent(TransactionService.ACTION_ONALARM,
                                         null, context, TransactionService.class);
 
-                    // Workaround for using PendingIntent.FLAG_IMMUTABLE until compileSdkVersion is updated to 31.
+                    // Workaround for using PendingIntent.FLAG_MUTABLE until compileSdkVersion is updated to 31.
                     // Actual value from:
-                    // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#247
-                    final int flagImmutable = 1 << 26;
+                    // https://android.googlesource.com/platform/frameworks/base.git/+/android-13.0.0_r18/core/java/android/app/PendingIntent.java#262
+                    final int flagMutable = 1 << 25;
                     @SuppressLint("WrongConstant")
                     PendingIntent operation = PendingIntent.getService(
-                            context, 0, service, PendingIntent.FLAG_ONE_SHOT | flagImmutable);
+                            context, 0, service, PendingIntent.FLAG_ONE_SHOT | flagMutable); // Since "service" is an explicit intent, FLAG_MUTABLE can be specified.
                     AlarmManager am = (AlarmManager) context.getSystemService(
                             Context.ALARM_SERVICE);
                     am.set(AlarmManager.RTC, retryAt, operation);
