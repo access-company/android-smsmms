@@ -19,11 +19,13 @@ import android.text.TextUtils;
 
 import com.android.mms.service_alt.MmsNetworkManager;
 import com.android.mms.service_alt.exception.MmsNetworkException;
+import com.android.mms.util.ExternalLogger;
 import com.google.android.mms.util_alt.SqliteWrapper;
 import com.klinker.android.logger.Log;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -428,10 +430,38 @@ public class Utils {
      */
     public static boolean isDefaultSmsApp(Context context) {
         if (hasKitKat()) {
-            return context.getPackageName().equals(Telephony.Sms.getDefaultSmsPackage(context));
+            boolean isDefaultSmsPackage = context.getPackageName().equals(Telephony.Sms.getDefaultSmsPackage(context));
+            return isDefaultSmsPackage || isSmsRoleHeld(context);
         }
 
         return true;
+    }
+
+    // Actual value from RoleManager.ROLE_SMS
+    // See: https://developer.android.com/reference/android/app/role/RoleManager#ROLE_SMS
+    private static final String ROLE_SMS = "android.app.role.SMS";
+
+    /**
+     * Workaround for using RoleManager until compileSdkVersion is updated to 29.
+     *
+     * @noinspection rawtypes, unchecked
+     */
+    private static boolean isSmsRoleHeld(Context context) {
+        if (Build.VERSION.SDK_INT < 29) {
+            return false;
+        }
+
+        try {
+            Class roleManagerClass = Class.forName("android.app.role.RoleManager");
+            Method isRoleHeldMethod = roleManagerClass.getMethod("isRoleHeld", String.class);
+
+            Object roleManager = context.getSystemService(roleManagerClass);
+            return (Boolean) isRoleHeldMethod.invoke(roleManager, ROLE_SMS);
+        } catch (ClassNotFoundException | ClassCastException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            ExternalLogger.w("[Utils] isSmsRoleHeld() exception: ", e);
+        }
+
+        return false;
     }
 
     /**
