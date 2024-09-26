@@ -12,6 +12,7 @@ import android.telephony.TelephonyManager;
 import android.telephony.cdma.CdmaCellLocation;
 import android.widget.Toast;
 
+import com.android.mms.util.ExternalLogger;
 import com.klinker.android.logger.Log;
 
 import org.xmlpull.v1.XmlPullParser;
@@ -194,38 +195,45 @@ public class ApnUtils {
         String networkOperator = manager.getNetworkOperator();
 
         if (isValidNetworkOperator(networkOperator)) {
+            ExternalLogger.e("[ApnUtils] loadApns() get MCC and MNC from networkOperator");
             mcc = Integer.parseInt(networkOperator.substring(0, 3));
             String s = networkOperator.substring(3);
             try {
                 mnc = Integer.parseInt(s.replaceFirst("^0{1,2}", ""));
             } catch (Exception e) {
+                ExternalLogger.e("[ApnUtils] loadApns() failed to parse MNC. ", e);
                 mnc = -1;
             }
         } else {
+            ExternalLogger.e("[ApnUtils] loadApns() get MCC and MNC from configuration");
             mcc = context.getResources().getConfiguration().mcc;
             mnc = context.getResources().getConfiguration().mnc;
         }
 
         try {
             if (mcc == -1) {
+                ExternalLogger.e("[ApnUtils] loadApns() get MCC from ServiceState");
                 mcc = Integer.parseInt(new ServiceState().getOperatorNumeric().substring(0, 3));
             }
 
             if (mnc == -1) {
+                ExternalLogger.e("[ApnUtils] loadApns() get MNC from SystemId");
                 TelephonyManager tm  = (TelephonyManager) context.getSystemService
                         (Context.TELEPHONY_SERVICE);
                 mnc = ((CdmaCellLocation) tm.getCellLocation()).getSystemId();
             }
         } catch (Exception e) {
-
+            ExternalLogger.e("[ApnUtils] loadApns() failed to get MCC or MNC. ", e);
         }
 
         if (mcc == -1 || mnc == -1) {
             Log.v(TAG, "couldn't find both mcc and mnc. mcc = " + mcc + ", mnc = " + mnc);
+            ExternalLogger.w("[ApnUtils] loadApns() couldn't find both mcc and mnc. mcc = " + mcc + ", mnc = " + mnc);
             return null;
         }
 
         Log.v(TAG, "mcc: " + mcc + " mnc: " + mnc);
+        ExternalLogger.e("[ApnUtils] loadApns() mcc: " + mcc + " mnc: " + mnc);
 
         try {
             beginDocument(parser, "apns");
@@ -249,6 +257,9 @@ public class ApnUtils {
                         }
                     } catch (Exception e) {
                         // cast exception probably
+                        if (!(e instanceof NumberFormatException)) {
+                            ExternalLogger.e("[ApnUtils] loadApns() parsing exception ", e);
+                        }
                     }
                 }
 
@@ -302,15 +313,19 @@ public class ApnUtils {
             }
         } catch (XmlPullParserException e) {
             Log.e(TAG, "loadApns caught ", e);
+            ExternalLogger.e("[ApnUtils] loadApns() parsing exception[2] ", e);
         } catch (NumberFormatException e) {
             Log.e(TAG, "loadApns caught ", e);
+            ExternalLogger.e("[ApnUtils] loadApns() parsing exception[3] ", e);
         } catch (IOException e) {
             Log.e(TAG, "loadApns caught ", e);
+            ExternalLogger.e("[ApnUtils] loadApns() parsing exception[4] ", e);
         } finally {
             parser.close();
         }
 
         Log.v(TAG, "MMSC: " + mmsc + ", MMS Proxy: " + proxy + ", MMS Port: " + port);
+        ExternalLogger.e("[ApnUtils] loadApns() MMSC: " + mmsc + ", MMS Proxy: " + proxy + ", MMS Port: " + port);
 
         String errorStr = null;
 
