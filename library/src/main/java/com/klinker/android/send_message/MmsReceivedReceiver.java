@@ -27,6 +27,7 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.mms.service_alt.DownloadRequest;
@@ -82,8 +83,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         // Override this and provide the MMSC to send the ACK to.
         // some carriers will download duplicate MMS messages without this ACK. When using the
         // system sending method, apparently Google does not do this for us. Not sure why.
-        // You might have to have users manually enter their APN settings if you cannot get them
-        // from the system somehow.
+        //
+        // Returning null is fine: the ACK is then only sent through the system MMS service,
+        // which resolves the MMSC from the carrier configuration. The MMSC returned here is used
+        // as a fallback for the case the system refuses to send the PDU. Reading the APN database
+        // is restricted to system apps since Android 11, so the MMSC is often unknown to the app.
 
         return null;
     }
@@ -123,7 +127,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                     reader.read(response, 0, nBytes);
                     ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread file size=" + nBytes + ", path=" + path);
 
-                    List<CommonAsyncTask> tasks = getNotificationTask(context, intent, response);
+                    List<CommonAsyncTask> tasks = getNotificationTask(context, intent, response, subscriptionId);
 
                     ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread call persist");
                     messageUri = DownloadRequest.persist(context, response,
@@ -219,16 +223,80 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     }
 
     private static abstract class CommonAsyncTask extends AsyncTask<Void, Void, Void> {
+        private static final int MAX_ACK_ATTEMPTS = 3;
+        private static final long ACK_RETRY_INTERVAL_MS = 2 * 1000;
+
         protected final Context mContext;
+        /** The settings of the MMSC, or null when the MMSC of the carrier is unknown. */
         protected final TransactionSettings mTransactionSettings;
         final NotificationInd mNotificationInd;
         final String mContentLocation;
+        private final int mSubscriptionId;
 
-        CommonAsyncTask(Context context, TransactionSettings settings, NotificationInd ind) {
+        CommonAsyncTask(Context context, TransactionSettings settings, NotificationInd ind,
+                        int subscriptionId) {
             mContext = context;
             mTransactionSettings = settings;
             mNotificationInd = ind;
             mContentLocation = new String(ind.getContentLocation());
+            mSubscriptionId = subscriptionId;
+        }
+
+        /**
+         * Reports the result of the retrieval to the MMSC.
+         *
+         * The MMSC keeps a message that has not been acknowledged and notifies the device of it
+         * again, which makes the same message be downloaded more than once. The PDU is therefore
+         * sent through the system MMS service first, because the MMSC of the carrier cannot be
+         * resolved by the app itself since Android 11. A direct connection to the MMSC is only
+         * used as a fallback, and only when the MMSC happens to be known.
+         *
+         * @param pdu A byte array which contains the data of the PDU.
+         * @param name The name of the PDU, for logging.
+         */
+        void sendAcknowledgement(byte[] pdu, String name) {
+            // Some carriers expect the report at the location the message was retrieved from
+            // instead of the MMSC.
+            final String locationUrl =
+                    com.android.mms.MmsConfig.getNotifyWapMMSC() ? mContentLocation : null;
+
+            for (int attempt = 1; attempt <= MAX_ACK_ATTEMPTS; attempt++) {
+                if (SystemMmsPduSender.send(mContext, pdu, mSubscriptionId, locationUrl)) {
+                    ExternalLogger.i("[CommonAsyncTask] sendAcknowledgement() sent " + name
+                            + " through the system. attempt=" + attempt);
+                    return;
+                }
+
+                if (mTransactionSettings != null
+                        && !TextUtils.isEmpty(mTransactionSettings.getMmscUrl())) {
+                    try {
+                        sendPdu(pdu, locationUrl != null
+                                ? locationUrl : mTransactionSettings.getMmscUrl());
+                        ExternalLogger.i("[CommonAsyncTask] sendAcknowledgement() sent " + name
+                                + " through a direct connection. attempt=" + attempt);
+                        return;
+                    } catch (IOException e) {
+                        ExternalLogger.w("[CommonAsyncTask] sendAcknowledgement() failed to send "
+                                + name + " through a direct connection. attempt=" + attempt, e);
+                    } catch (MmsException e) {
+                        ExternalLogger.w("[CommonAsyncTask] sendAcknowledgement() failed to send "
+                                + name + " through a direct connection. attempt=" + attempt, e);
+                    }
+                }
+
+                if (attempt < MAX_ACK_ATTEMPTS) {
+                    try {
+                        Thread.sleep(ACK_RETRY_INTERVAL_MS * attempt);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+
+            // The message stays on the MMSC as if it had never been retrieved, so it can be
+            // notified and downloaded again.
+            ExternalLogger.e("[CommonAsyncTask] sendAcknowledgement() gave up sending " + name);
         }
 
         /**
@@ -244,21 +312,6 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
          */
         byte[] sendPdu(byte[] pdu, String mmscUrl) throws IOException, MmsException {
             return sendPdu(SendingProgressTokenManager.NO_TOKEN, pdu, mmscUrl);
-        }
-
-        /**
-         * A common method to send a PDU to MMSC.
-         *
-         * @param pdu A byte array which contains the data of the PDU.
-         * @return A byte array which contains the response data.
-         *         If an HTTP error code is returned, an IOException will be thrown.
-         * @throws java.io.IOException if any error occurred on network interface or
-         *         an HTTP error code(>=400) returned from the server.
-         * @throws com.google.android.mms.MmsException if pdu is null.
-         */
-        byte[] sendPdu(byte[] pdu) throws IOException, MmsException {
-            return sendPdu(SendingProgressTokenManager.NO_TOKEN, pdu,
-                    mTransactionSettings.getMmscUrl());
         }
 
         /**
@@ -307,8 +360,9 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     }
 
     private static class NotifyRespTask extends CommonAsyncTask {
-        NotifyRespTask(Context context, NotificationInd ind, TransactionSettings settings) {
-            super(context, settings, ind);
+        NotifyRespTask(Context context, NotificationInd ind, TransactionSettings settings,
+                       int subscriptionId) {
+            super(context, settings, ind, subscriptionId);
         }
 
         @Override
@@ -322,15 +376,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                         STATUS_RETRIEVED);
 
                 // Pack M-NotifyResp.ind and send it
-                if(com.android.mms.MmsConfig.getNotifyWapMMSC()) {
-                    sendPdu(new PduComposer(mContext, notifyRespInd).make(), mContentLocation);
-                } else {
-                    sendPdu(new PduComposer(mContext, notifyRespInd).make());
-                }
+                sendAcknowledgement(new PduComposer(mContext, notifyRespInd).make(),
+                        "M-NotifyResp.ind");
             } catch (MmsException e) {
                 Log.e(TAG, "error", e);
-            } catch (IOException e) {
-                Log.e(TAG, "error", e);
+                ExternalLogger.e("[NotifyRespTask] doInBackground() failed to build the pdu", e);
             }
             return null;
         }
@@ -339,8 +389,9 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     private static class AcknowledgeIndTask extends CommonAsyncTask {
         private final RetrieveConf mRetrieveConf;
 
-        AcknowledgeIndTask(Context context, NotificationInd ind, TransactionSettings settings, RetrieveConf rc) {
-            super(context, settings, ind);
+        AcknowledgeIndTask(Context context, NotificationInd ind, TransactionSettings settings,
+                           RetrieveConf rc, int subscriptionId) {
+            super(context, settings, ind, subscriptionId);
             mRetrieveConf = rc;
         }
 
@@ -351,7 +402,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
             // the MMS proxy-relay doesn't require an ACK.
             byte[] tranId = mRetrieveConf.getTransactionId();
             if (tranId != null) {
-                Log.v(TAG, "sending ACK to MMSC: " + mTransactionSettings.getMmscUrl());
+                Log.v(TAG, "sending ACK to the MMSC");
                 // Create M-Acknowledge.ind
                 com.google.android.mms.pdu_alt.AcknowledgeInd acknowledgeInd = null;
 
@@ -369,33 +420,22 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                     }
 
                     // Pack M-Acknowledge.ind and send it
-                    if(com.android.mms.MmsConfig.getNotifyWapMMSC()) {
-                        sendPdu(new PduComposer(mContext, acknowledgeInd).make(), mContentLocation);
-                    } else {
-                        sendPdu(new PduComposer(mContext, acknowledgeInd).make());
-                    }
+                    sendAcknowledgement(new PduComposer(mContext, acknowledgeInd).make(),
+                            "M-Acknowledge.ind");
                 } catch (InvalidHeaderValueException e) {
                     Log.e(TAG, "error", e);
-                } catch (MmsException e) {
-                    Log.e(TAG, "error", e);
-                } catch (IOException e) {
-                    Log.e(TAG, "error", e);
+                    ExternalLogger.e("[AcknowledgeIndTask] doInBackground() failed to build the pdu", e);
                 }
             }
             return null;
         }
     }
 
-    private List<CommonAsyncTask> getNotificationTask(Context context, Intent intent, byte[] response) {
+    private List<CommonAsyncTask> getNotificationTask(Context context, Intent intent, byte[] response,
+                                                     int subscriptionId) {
         if (response.length == 0) {
             Log.v(TAG, "MmsReceivedReceiver.sendNotification blank response");
             ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end1] blank response");
-            return null;
-        }
-
-        if (getMmscInfoForReceptionAck(context) == null) {
-            Log.v(TAG, "No MMSC information set, so no notification tasks will be able to complete");
-            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end2] No MMSC information set, so no notification tasks will be able to complete");
             return null;
         }
 
@@ -412,11 +452,18 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         try {
             final NotificationInd ind = getNotificationInd(context, intent);
             final MmscInformation mmsc = getMmscInfoForReceptionAck(context);
-            final TransactionSettings transactionSettings = new TransactionSettings(mmsc.mmscUrl, mmsc.mmsProxy, mmsc.proxyPort);
+            // The MMSC is only needed for the fallback, so the tasks are still worth running
+            // without it. The system MMS service resolves the MMSC on its own.
+            final TransactionSettings transactionSettings = mmsc == null
+                    ? null : new TransactionSettings(mmsc.mmscUrl, mmsc.mmsProxy, mmsc.proxyPort);
+            if (mmsc == null) {
+                Log.v(TAG, "No MMSC information set, so the acknowledgement can only be sent through the system");
+                ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() No MMSC information set, so the acknowledgement can only be sent through the system");
+            }
 
             final List<CommonAsyncTask> responseTasks = new ArrayList<>();
-            responseTasks.add(new AcknowledgeIndTask(context, ind, transactionSettings, (RetrieveConf) pdu));
-            responseTasks.add(new NotifyRespTask(context, ind, transactionSettings));
+            responseTasks.add(new AcknowledgeIndTask(context, ind, transactionSettings, (RetrieveConf) pdu, subscriptionId));
+            responseTasks.add(new NotifyRespTask(context, ind, transactionSettings, subscriptionId));
 
             ExternalLogger.i("[MmsReceivedReceiver] getNotificationTask() [end] success");
             return responseTasks;
