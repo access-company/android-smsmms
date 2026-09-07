@@ -16,6 +16,7 @@
 
 package com.klinker.android.send_message;
 
+import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -71,6 +72,8 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     public static final String EXTRA_TRIGGER_PUSH = "trigger_push";
     public static final String EXTRA_URI = "notification_ind_uri";
     public static final String SUBSCRIPTION_ID = "subscription_id";
+    /** The result code the system reported for the download. */
+    public static final String EXTRA_RESULT_CODE = "result_code";
 
     private static final String LOCATION_SELECTION =
             Telephony.Mms.MESSAGE_TYPE + "=? AND " + Telephony.Mms.CONTENT_LOCATION + " =?";
@@ -214,16 +217,23 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         }
 
         final Uri uri = intent.getParcelableExtra(EXTRA_URI);
+        // The HTTP status is only reported for a HTTP failure, and the result PendingIntent of the
+        // download is immutable, so the extra never actually arrives. The result code the system
+        // reported is carried over by the download receiver instead, and is the only reliable way
+        // to tell a failed download from a failed store.
+        final int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_OK);
         final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
-        if (httpError != 200) {
+        if (resultCode != Activity.RESULT_OK) {
             if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
                 // Sometimes MMS can not be acquired if Wifi is enabled.
                 // For example, if you are playing Youtube in the foreground.
                 // The failure is caused by the environment, so it is not counted as an attempt.
+                ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() the download failed while Wi-Fi is active, so it is not counted. resultCode="
+                        + resultCode + ", uri=" + uri);
                 return;
             }
-            ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() schedule retry. HTTP status="
-                    + httpError + ", uri=" + uri);
+            ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() schedule retry. the download failed. resultCode="
+                    + resultCode + ", HTTP status=" + httpError + ", uri=" + uri);
             RetryScheduler.getInstance(context).scheduleRetry(uri);
             return;
         }
