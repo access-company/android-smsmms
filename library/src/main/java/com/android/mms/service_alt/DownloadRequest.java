@@ -111,12 +111,24 @@ public class DownloadRequest extends MmsRequest {
             return null;
         }
 
-        return persist(context, response, mMmsConfig, mLocationUrl, mSubId, mCreator);
+        return persist(context, response, mMmsConfig, mLocationUrl, mSubId, mCreator, mContentUri);
     }
 
     public static Uri persist(Context context, byte[] response, MmsConfig.Overridden mmsConfig,
                               String locationUrl, int subId, String creator) {
-        ExternalLogger.i("[DownloadRequest] persist() [start] Provider locationUrl=" + locationUrl);
+        return persist(context, response, mmsConfig, locationUrl, subId, creator, null);
+    }
+
+    /**
+     * @param notificationUri The uri of the M-Notification.ind the message was downloaded for, or
+     *                        null when it is unknown. The row is deleted once the message has been
+     *                        stored, and kept with its retrieve status when it has not, so that the
+     *                        message can be downloaded again.
+     */
+    public static Uri persist(Context context, byte[] response, MmsConfig.Overridden mmsConfig,
+                              String locationUrl, int subId, String creator, Uri notificationUri) {
+        ExternalLogger.i("[DownloadRequest] persist() [start] Provider locationUrl=" + locationUrl
+                + ", notificationUri=" + notificationUri);
         // Let any mms apps running as secondary user know that a new mms has been downloaded.
         notifyOfDownload(context);
 
@@ -124,18 +136,8 @@ public class DownloadRequest extends MmsRequest {
         if (response == null || response.length < 1) {
             Log.e(TAG, "DownloadRequest.persistIfRequired: empty response");
             // Update the retrieve status of the NotificationInd
-            final ContentValues values = new ContentValues(1);
-            values.put(Telephony.Mms.RETRIEVE_STATUS, PduHeaders.RETRIEVE_STATUS_ERROR_END);
-            SqliteWrapper.update(
-                    context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    values,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            locationUrl
-                    });
+            updateRetrieveStatus(context, notificationUri, locationUrl,
+                    PduHeaders.RETRIEVE_STATUS_ERROR_END);
             ExternalLogger.i("[DownloadRequest] persist() [end1] empty response.");
             return null;
         }
@@ -154,24 +156,14 @@ public class DownloadRequest extends MmsRequest {
             }
             final RetrieveConf retrieveConf = (RetrieveConf) pdu;
             final int status = retrieveConf.getRetrieveStatus();
-//            if (status != PduHeaders.RETRIEVE_STATUS_OK) {
-//                Log.e(TAG, "DownloadRequest.persistIfRequired: retrieve failed "
-//                        + status);
-//                // Update the retrieve status of the NotificationInd
-//                final ContentValues values = new ContentValues(1);
-//                values.put(Telephony.Mms.RETRIEVE_STATUS, status);
-//                SqliteWrapper.update(
-//                        context,
-//                        context.getContentResolver(),
-//                        Telephony.Mms.CONTENT_URI,
-//                        values,
-//                        LOCATION_SELECTION,
-//                        new String[]{
-//                                Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-//                                mLocationUrl
-//                        });
-//                return null;
-//            }
+            if (status != PduHeaders.RETRIEVE_STATUS_OK) {
+                Log.e(TAG, "DownloadRequest.persistIfRequired: retrieve failed " + status);
+                // Update the retrieve status of the NotificationInd. The row is kept so that the
+                // message can be downloaded again.
+                updateRetrieveStatus(context, notificationUri, locationUrl, status);
+                ExternalLogger.w("[DownloadRequest] persist() [end2-1] retrieve failed. status=" + status);
+                return null;
+            }
             // Store the downloaded message
             final PduPersister persister = PduPersister.getPduPersister(context);
             final Uri messageUri = persister.persist(
@@ -234,14 +226,18 @@ public class DownloadRequest extends MmsRequest {
 
             // Delete the corresponding NotificationInd
             ExternalLogger.d("[DownloadRequest] persist() Delete the corresponding NotificationInd");
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            locationUrl
-                    });
+            if (notificationUri != null) {
+                SqliteWrapper.delete(context, context.getContentResolver(), notificationUri, null, null);
+            } else {
+                SqliteWrapper.delete(context,
+                        context.getContentResolver(),
+                        Telephony.Mms.CONTENT_URI,
+                        LOCATION_SELECTION,
+                        new String[]{
+                                Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                                locationUrl
+                        });
+            }
 
             ExternalLogger.i("[DownloadRequest] persist() [end4] messageUri=" + messageUri);
             return messageUri;
@@ -376,6 +372,32 @@ public class DownloadRequest extends MmsRequest {
             }
         }
         return null;
+    }
+
+    /**
+     * Records why the retrieval failed on the M-Notification.ind without deleting it.
+     */
+    private static void updateRetrieveStatus(Context context, Uri notificationUri,
+                                             String locationUrl, int status) {
+        final ContentValues values = new ContentValues(1);
+        values.put(Telephony.Mms.RETRIEVE_STATUS, status);
+        if (notificationUri != null) {
+            SqliteWrapper.update(context, context.getContentResolver(), notificationUri, values,
+                    null, null);
+        } else {
+            SqliteWrapper.update(
+                    context,
+                    context.getContentResolver(),
+                    Telephony.Mms.CONTENT_URI,
+                    values,
+                    LOCATION_SELECTION,
+                    new String[]{
+                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                            locationUrl
+                    });
+        }
+        ExternalLogger.i("[DownloadRequest] updateRetrieveStatus() status=" + status
+                + ", notificationUri=" + notificationUri);
     }
 
     private static void setErrorType(Context context, String locationUrl, int errorType) {

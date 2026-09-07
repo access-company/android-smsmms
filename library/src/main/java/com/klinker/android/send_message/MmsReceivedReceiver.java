@@ -59,6 +59,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import static com.google.android.mms.pdu_alt.PduHeaders.STATUS_DEFERRED;
 import static com.google.android.mms.pdu_alt.PduHeaders.STATUS_RETRIEVED;
 
 public abstract class MmsReceivedReceiver extends BroadcastReceiver {
@@ -96,15 +97,8 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     public final void onReceive(final Context context, final Intent intent) {
         Log.v(TAG, "MMS has finished downloading, persisting it to the database");
 
-        final String uri;
-        {
-            Object uriObject = intent.getParcelableExtra(EXTRA_URI);
-            if (uriObject != null) {
-                uri = uriObject.toString();
-            } else {
-                uri = "null";
-            }
-        }
+        final Uri notificationUri = intent.getParcelableExtra(EXTRA_URI);
+        final String uri = notificationUri != null ? notificationUri.toString() : "null";
         ExternalLogger.i("[MmsReceivedReceiver] onReceive() [start] uri=" + uri);
 
         final String path = intent.getStringExtra(EXTRA_FILE_PATH);
@@ -127,21 +121,26 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                     reader.read(response, 0, nBytes);
                     ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread file size=" + nBytes + ", path=" + path);
 
-                    List<CommonAsyncTask> tasks = getNotificationTask(context, intent, response, subscriptionId);
+                    // The M-Notification.ind has to be read before it is deleted by persist().
+                    Acknowledgement acknowledgement = prepareAcknowledgement(context, intent, response);
 
                     ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread call persist");
                     messageUri = DownloadRequest.persist(context, response,
                             new MmsConfig.Overridden(new MmsConfig(context), null),
                             intent.getStringExtra(EXTRA_LOCATION_URL),
-                            subscriptionId, null);
+                            subscriptionId, null, notificationUri);
                     ExternalLogger.d("[MmsReceivedReceiver] onReceive() thread messageUri=" + messageUri);
 
                     Log.v(TAG, "response saved successfully");
                     Log.v(TAG, "response length: " + response.length);
                     mDownloadFile.delete();
 
-                    if (tasks != null) {
+                    if (acknowledgement != null) {
+                        // Report the message as retrieved only when it was stored. Reporting a
+                        // message the app failed to store lets the MMSC drop it for good.
                         Log.v(TAG, "running the common async notifier for download");
+                        List<CommonAsyncTask> tasks = acknowledgement.getTasks(
+                                context, subscriptionId, messageUri != null);
                         for (CommonAsyncTask task : tasks)
                             task.executeOnExecutor(RECEIVE_NOTIFICATION_EXECUTOR);
                     }
@@ -166,7 +165,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                     }
                 }
 
-                handleHttpError(context, intent);
+                handleRetrieveFailure(context, intent, messageUri != null);
                 DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
                 if (messageUri != null) {
                     onMessageReceived(context, messageUri);
@@ -199,21 +198,40 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         return false;
     }
 
-    private void handleHttpError(Context context, Intent intent) {
+    /**
+     * Counts a failed retrieval so that it is eventually given up on.
+     *
+     * The M-Notification.ind is kept when the message could not be stored, which makes it a
+     * pending download again. Without counting the attempt it would be retried forever, and since
+     * the pending downloads are processed one at a time, it would also hold up every other
+     * message.
+     *
+     * @param stored Whether the downloaded message was stored.
+     */
+    private void handleRetrieveFailure(Context context, Intent intent, boolean stored) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
             return;
         }
 
-        if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
-            // Sometimes MMS can not be acquired if Wifi is enabled.
-            // For example, if you are playing Youtube in the foreground.
+        final Uri uri = intent.getParcelableExtra(EXTRA_URI);
+        final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
+        if (httpError != 200) {
+            if (!Utils.isMmsOverWifiEnabled(context) && isWifiActive(context)) {
+                // Sometimes MMS can not be acquired if Wifi is enabled.
+                // For example, if you are playing Youtube in the foreground.
+                // The failure is caused by the environment, so it is not counted as an attempt.
+                return;
+            }
+            ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() schedule retry. HTTP status="
+                    + httpError + ", uri=" + uri);
+            RetryScheduler.getInstance(context).scheduleRetry(uri);
             return;
         }
 
-        final int httpError = intent.getIntExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, 0);
-        if (httpError != 200) {
-            Uri uri = intent.getParcelableExtra(EXTRA_URI);
-            ExternalLogger.w("[MmsReceivedReceiver] handleHttpError() schedule retry. HTTP status=" + httpError + ", uri=" + uri);
+        if (!stored) {
+            // The message was downloaded but could not be stored, which is not caused by the
+            // environment. It is always counted as an attempt so that it is given up on.
+            ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() schedule retry. the message was not stored. uri=" + uri);
             RetryScheduler.getInstance(context).scheduleRetry(uri);
         }
     }
@@ -360,9 +378,12 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
     }
 
     private static class NotifyRespTask extends CommonAsyncTask {
+        private final int mStatus;
+
         NotifyRespTask(Context context, NotificationInd ind, TransactionSettings settings,
-                       int subscriptionId) {
+                       int subscriptionId, int status) {
             super(context, settings, ind, subscriptionId);
+            mStatus = status;
         }
 
         @Override
@@ -373,11 +394,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 notifyRespInd = new NotifyRespInd(
                         PduHeaders.CURRENT_MMS_VERSION,
                         mNotificationInd.getTransactionId(),
-                        STATUS_RETRIEVED);
+                        mStatus);
 
                 // Pack M-NotifyResp.ind and send it
                 sendAcknowledgement(new PduComposer(mContext, notifyRespInd).make(),
-                        "M-NotifyResp.ind");
+                        "M-NotifyResp.ind(status=" + mStatus + ")");
             } catch (MmsException e) {
                 Log.e(TAG, "error", e);
                 ExternalLogger.e("[NotifyRespTask] doInBackground() failed to build the pdu", e);
@@ -431,45 +452,78 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
         }
     }
 
-    private List<CommonAsyncTask> getNotificationTask(Context context, Intent intent, byte[] response,
-                                                     int subscriptionId) {
+    /**
+     * Everything that is needed to report the result of the retrieval to the MMSC.
+     *
+     * It has to be collected before the downloaded message is stored, because storing it deletes
+     * the M-Notification.ind the report is built from.
+     */
+    private static class Acknowledgement {
+        private final NotificationInd mNotificationInd;
+        private final RetrieveConf mRetrieveConf;
+        private final TransactionSettings mTransactionSettings;
+
+        Acknowledgement(NotificationInd notificationInd, RetrieveConf retrieveConf,
+                        TransactionSettings transactionSettings) {
+            mNotificationInd = notificationInd;
+            mRetrieveConf = retrieveConf;
+            mTransactionSettings = transactionSettings;
+        }
+
+        /**
+         * @param retrieved Whether the message was stored. When it was not, the message is
+         *                  reported as deferred so that the MMSC keeps it.
+         */
+        List<CommonAsyncTask> getTasks(Context context, int subscriptionId, boolean retrieved) {
+            final List<CommonAsyncTask> tasks = new ArrayList<>();
+            if (retrieved) {
+                tasks.add(new AcknowledgeIndTask(context, mNotificationInd, mTransactionSettings,
+                        mRetrieveConf, subscriptionId));
+                tasks.add(new NotifyRespTask(context, mNotificationInd, mTransactionSettings,
+                        subscriptionId, STATUS_RETRIEVED));
+            } else {
+                ExternalLogger.w("[Acknowledgement] getTasks() the message was not stored, report it as deferred");
+                tasks.add(new NotifyRespTask(context, mNotificationInd, mTransactionSettings,
+                        subscriptionId, STATUS_DEFERRED));
+            }
+            return tasks;
+        }
+    }
+
+    private Acknowledgement prepareAcknowledgement(Context context, Intent intent, byte[] response) {
         if (response.length == 0) {
             Log.v(TAG, "MmsReceivedReceiver.sendNotification blank response");
-            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end1] blank response");
+            ExternalLogger.w("[MmsReceivedReceiver] prepareAcknowledgement() [end1] blank response");
             return null;
         }
 
         final GenericPdu pdu =
                 (new PduParser(response, new MmsConfig.Overridden(new MmsConfig(context), null).
                         getSupportMmsContentDisposition())).parse();
-        ExternalLogger.d("[MmsReceivedReceiver] getNotificationTask() pdu=" + ExternalLogger.getNameWithHash(pdu));
-        if (pdu == null || !(pdu instanceof RetrieveConf)) {
+        ExternalLogger.d("[MmsReceivedReceiver] prepareAcknowledgement() pdu=" + ExternalLogger.getNameWithHash(pdu));
+        if (!(pdu instanceof RetrieveConf)) {
             android.util.Log.e(TAG, "MmsReceivedReceiver.sendNotification failed to parse pdu");
-            ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() [end3] failed to parse pdu");
+            ExternalLogger.w("[MmsReceivedReceiver] prepareAcknowledgement() [end2] failed to parse pdu");
             return null;
         }
 
         try {
             final NotificationInd ind = getNotificationInd(context, intent);
             final MmscInformation mmsc = getMmscInfoForReceptionAck(context);
-            // The MMSC is only needed for the fallback, so the tasks are still worth running
+            // The MMSC is only needed for the fallback, so the report is still worth sending
             // without it. The system MMS service resolves the MMSC on its own.
             final TransactionSettings transactionSettings = mmsc == null
                     ? null : new TransactionSettings(mmsc.mmscUrl, mmsc.mmsProxy, mmsc.proxyPort);
             if (mmsc == null) {
                 Log.v(TAG, "No MMSC information set, so the acknowledgement can only be sent through the system");
-                ExternalLogger.w("[MmsReceivedReceiver] getNotificationTask() No MMSC information set, so the acknowledgement can only be sent through the system");
+                ExternalLogger.w("[MmsReceivedReceiver] prepareAcknowledgement() No MMSC information set, so the acknowledgement can only be sent through the system");
             }
 
-            final List<CommonAsyncTask> responseTasks = new ArrayList<>();
-            responseTasks.add(new AcknowledgeIndTask(context, ind, transactionSettings, (RetrieveConf) pdu, subscriptionId));
-            responseTasks.add(new NotifyRespTask(context, ind, transactionSettings, subscriptionId));
-
-            ExternalLogger.i("[MmsReceivedReceiver] getNotificationTask() [end] success");
-            return responseTasks;
+            ExternalLogger.i("[MmsReceivedReceiver] prepareAcknowledgement() [end] success");
+            return new Acknowledgement(ind, (RetrieveConf) pdu, transactionSettings);
         } catch (MmsException e) {
             Log.e(TAG, "error", e);
-            ExternalLogger.e("[MmsReceivedReceiver] getNotificationTask() [exception]", e);
+            ExternalLogger.e("[MmsReceivedReceiver] prepareAcknowledgement() [exception]", e);
             return null;
         }
     }
