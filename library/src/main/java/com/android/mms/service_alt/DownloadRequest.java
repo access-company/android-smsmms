@@ -179,7 +179,39 @@ public class DownloadRequest extends MmsRequest {
                 ExternalLogger.i("[DownloadRequest] persist() [end3] can not persist message.");
                 return null;
             }
-            // Update some of the properties of the message
+            // From here on the message is already in the inbox. A failure must not be reported
+            // as a failure to store, because the caller would keep the M-Notification.ind, which
+            // makes it a pending download again and stores the message a second time.
+            updateStoredMessage(context, messageUri, retrieveConf, subId, creator);
+            deleteNotificationInd(context, notificationUri, locationUrl);
+
+            ExternalLogger.i("[DownloadRequest] persist() [end4] messageUri=" + messageUri);
+            return messageUri;
+        } catch (MmsException e) {
+            Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
+            ExternalLogger.w("[DownloadRequest] persist() MmsException", e);
+        } catch (SQLiteException e) {
+            Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message", e);
+            ExternalLogger.w("[DownloadRequest] persist() SQLiteException", e);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "DownloadRequest.persistIfRequired: can not parse response", e);
+            ExternalLogger.w("[DownloadRequest] persist() RuntimeException", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+        ExternalLogger.i("[DownloadRequest] persist() [end5] return null");
+        return null;
+    }
+
+    /**
+     * Updates the properties of a message that has just been stored.
+     *
+     * A failure is only logged. The message is already stored, so it must not be reported as a
+     * failure to store.
+     */
+    private static void updateStoredMessage(Context context, Uri messageUri,
+                                            RetrieveConf retrieveConf, int subId, String creator) {
+        try {
             final ContentValues values = new ContentValues();
             values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
             values.put(Telephony.Mms.READ, 0);
@@ -224,8 +256,23 @@ public class DownloadRequest extends MmsRequest {
                 }
             }
 
-            // Delete the corresponding NotificationInd
-            ExternalLogger.d("[DownloadRequest] persist() Delete the corresponding NotificationInd");
+        } catch (RuntimeException e) {
+            ExternalLogger.w("[DownloadRequest] updateStoredMessage() failed", e);
+        }
+    }
+
+    /**
+     * Deletes the M-Notification.ind the message was downloaded for.
+     *
+     * A failure is only logged. The message is already stored, so it must not be reported as a
+     * failure to store.
+     *
+     * @param notificationUri The uri of the row, or null to look it up by its content location.
+     */
+    private static void deleteNotificationInd(Context context, Uri notificationUri,
+                                              String locationUrl) {
+        ExternalLogger.d("[DownloadRequest] deleteNotificationInd() uri=" + notificationUri);
+        try {
             if (notificationUri != null) {
                 SqliteWrapper.delete(context, context.getContentResolver(), notificationUri, null, null);
             } else {
@@ -238,23 +285,9 @@ public class DownloadRequest extends MmsRequest {
                                 locationUrl
                         });
             }
-
-            ExternalLogger.i("[DownloadRequest] persist() [end4] messageUri=" + messageUri);
-            return messageUri;
-        } catch (MmsException e) {
-            Log.e(TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
-            ExternalLogger.w("[DownloadRequest] persist() MmsException", e);
-        } catch (SQLiteException e) {
-            Log.e(TAG, "DownloadRequest.persistIfRequired: can not update message", e);
-            ExternalLogger.w("[DownloadRequest] persist() SQLiteException", e);
         } catch (RuntimeException e) {
-            Log.e(TAG, "DownloadRequest.persistIfRequired: can not parse response", e);
-            ExternalLogger.w("[DownloadRequest] persist() RuntimeException", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
+            ExternalLogger.w("[DownloadRequest] deleteNotificationInd() failed", e);
         }
-        ExternalLogger.i("[DownloadRequest] persist() [end5] return null");
-        return null;
     }
 
     private static void notifyOfDownload(Context context) {
