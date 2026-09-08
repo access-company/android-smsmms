@@ -128,6 +128,7 @@ class SystemMmsPduSender {
         };
 
         registerReceiver(applicationContext, receiver, action);
+        boolean timedOut = false;
         try {
             // Use a unique action in order to avoid cancelling the result of another send.
             final Intent sent = new Intent(action);
@@ -152,6 +153,7 @@ class SystemMmsPduSender {
                     applicationContext, contentUri, locationUrl, configOverrides, pendingIntent);
 
             if (!latch.await(SEND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                timedOut = true;
                 ExternalLogger.w("[SystemMmsPduSender] send() [end3] timed out");
                 return false;
             }
@@ -169,7 +171,15 @@ class SystemMmsPduSender {
                 applicationContext.unregisterReceiver(receiver);
             } catch (IllegalArgumentException ignored) {
             }
-            pduFile.delete();
+            if (timedOut) {
+                // A timeout does not cancel the request, which can still be reading the file.
+                // Deleting it would break a send that is only slow, so it is left for the platform
+                // to clean up with the rest of the cache.
+                ExternalLogger.w("[SystemMmsPduSender] send() the pdu file is left for the"
+                        + " outstanding request. name=" + fileName);
+            } else {
+                pduFile.delete();
+            }
         }
 
         final boolean sent = resultCode.get() == Activity.RESULT_OK;
