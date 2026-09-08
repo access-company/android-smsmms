@@ -1,6 +1,4 @@
 /*
- * Copyright (C) 2015 Jacob Klinker
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -50,6 +48,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * even when the app cannot read the APN database itself. Since Android 11, reading the APN
  * database is restricted to system apps, which means a direct connection to the MMSC is not
  * always possible.
+ *
+ * Adapted from {@code com.android.mms.transaction.DownloadManager}, which does the same thing for
+ * the download direction. The temporary file handling, the content {@link Uri} for
+ * {@code MmsFileProvider}, the unique broadcast action, the {@code FLAG_IMMUTABLE} workaround and
+ * the config overrides all come from there.
  *
  * This is a blocking call and must not be used from the main thread.
  */
