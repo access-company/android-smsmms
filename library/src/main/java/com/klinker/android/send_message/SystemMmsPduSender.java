@@ -85,13 +85,14 @@ class SystemMmsPduSender {
         final String fileName = "ack." + Math.abs(new Random().nextLong()) + ".dat";
         final File pduFile = new File(applicationContext.getCacheDir(), fileName);
 
+        boolean written = false;
         FileOutputStream writer = null;
         try {
             writer = new FileOutputStream(pduFile);
             writer.write(pdu);
+            written = true;
         } catch (IOException e) {
             ExternalLogger.e("[SystemMmsPduSender] send() [end2] failed to write the pdu", e);
-            return false;
         } finally {
             if (writer != null) {
                 try {
@@ -99,6 +100,14 @@ class SystemMmsPduSender {
                 } catch (IOException ignored) {
                 }
             }
+            if (!written) {
+                // The file can already exist even when the write failed part way through. Leaving
+                // it behind would add another file to the cache on every retry.
+                pduFile.delete();
+            }
+        }
+        if (!written) {
+            return false;
         }
 
         final Uri contentUri = (new Uri.Builder())
