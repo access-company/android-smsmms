@@ -157,6 +157,8 @@ public class DownloadManager {
 
             Intent newIntent = (Intent) intent.clone();
             newIntent.setAction(MmsReceivedReceiver.MMS_RECEIVED);
+            // The result code is not part of the intent, so it has to be carried over explicitly.
+            newIntent.putExtra(MmsReceivedReceiver.EXTRA_RESULT_CODE, getResultCode());
             BroadcastUtils.sendExplicitBroadcast(context, newIntent, MmsReceivedReceiver.MMS_RECEIVED);
             ExternalLogger.i("[MmsDownloadReceiver] onReceive() [end]");
         }
