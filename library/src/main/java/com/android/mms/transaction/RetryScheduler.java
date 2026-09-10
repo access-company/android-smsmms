@@ -119,6 +119,54 @@ public class RetryScheduler implements Observer {
         ExternalLogger.i("[RetryScheduler] update() [end]");
     }
 
+    /**
+     * Puts off the next attempt of a pending message without counting it as an attempt.
+     *
+     * Use this when the message could not be retrieved for a reason that is caused by the
+     * environment rather than by the message itself. The retry count and the error type are left
+     * alone, so the message is never given up on, but the due time is advanced so that the same
+     * message is not retried at once and the other pending messages get their turn.
+     *
+     * @param uri The uri of the message in the mms provider.
+     */
+    public void postponeRetry(Uri uri) {
+        final long msgId = ContentUris.parseId(uri);
+        ExternalLogger.i("[RetryScheduler] postponeRetry() [start] messageId=" + msgId + ", uri=" + uri);
+
+        final Uri.Builder uriBuilder = PendingMessages.CONTENT_URI.buildUpon();
+        uriBuilder.appendQueryParameter("protocol", "mms");
+        uriBuilder.appendQueryParameter("message", String.valueOf(msgId));
+
+        final Cursor cursor = SqliteWrapper.query(mContext, mContentResolver,
+                uriBuilder.build(), null, null, null, null);
+        if (cursor == null) {
+            ExternalLogger.w("[RetryScheduler] postponeRetry() [end1] cursor is null");
+            return;
+        }
+        try {
+            if ((cursor.getCount() != 1) || !cursor.moveToFirst()) {
+                ExternalLogger.w("[RetryScheduler] postponeRetry() [end2] cannot find the pending status. count=" + cursor.getCount());
+                return;
+            }
+
+            final long current = System.currentTimeMillis();
+            final ContentValues values = new ContentValues(2);
+            values.put(PendingMessages.DUE_TIME, current + MIN_RETRY_INTERVAL_MS);
+            values.put(PendingMessages.LAST_TRY, current);
+
+            final long id = cursor.getLong(cursor.getColumnIndexOrThrow(PendingMessages._ID));
+            SqliteWrapper.update(mContext, mContentResolver, PendingMessages.CONTENT_URI,
+                    values, PendingMessages._ID + "=" + id, null);
+            ExternalLogger.i("[RetryScheduler] postponeRetry() put off by " + MIN_RETRY_INTERVAL_MS
+                    + "ms. messageId=" + msgId + ", pendingId=" + id);
+        } finally {
+            cursor.close();
+        }
+
+        setRetryAlarm(mContext);
+        ExternalLogger.i("[RetryScheduler] postponeRetry() [end]");
+    }
+
     public void scheduleRetry(Uri uri) {
         long msgId = ContentUris.parseId(uri);
         ExternalLogger.i("[RetryScheduler] scheduleRetry() [start] messageId=" + msgId + ", uri=" + uri);
