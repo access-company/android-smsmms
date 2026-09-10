@@ -43,6 +43,9 @@ import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.BroadcastUtils;
 import com.klinker.android.send_message.R;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class RetryScheduler implements Observer {
     private static final String TAG = LogTag.TAG;
     private static final boolean DEBUG = false;
@@ -117,6 +120,91 @@ public class RetryScheduler implements Observer {
             }
         }
         ExternalLogger.i("[RetryScheduler] update() [end]");
+    }
+
+    /**
+     * The number of message ids that are put in one selection when the pending messages are
+     * updated in bulk.
+     */
+    private static final int GIVE_UP_CHUNK_SIZE = 200;
+
+    /**
+     * Gives up on the pending retrievals whose notification has expired.
+     *
+     * The MMSC does not keep a message past the expiry the M-Notification.ind reports, so
+     * retrieving it can never succeed again. Such a notification would otherwise be retried
+     * forever, and since the pending messages are processed one at a time, a backlog of them
+     * holds up the retrieval of the messages that did just arrive.
+     *
+     * The pending messages are marked with a permanent error instead of being removed, which is
+     * how a retrieval that is given up on is reported. The M-Notification.ind itself is left in
+     * the mms provider.
+     *
+     * @return The number of pending messages that were given up on.
+     */
+    public int giveUpOnExpiredRetrievals() {
+        final List<Long> expired = getExpiredNotificationIds();
+        if (expired.isEmpty()) {
+            return 0;
+        }
+
+        final ContentValues values = new ContentValues(1);
+        values.put(PendingMessages.ERROR_TYPE, MmsSms.ERR_TYPE_MMS_PROTO_PERMANENT);
+
+        int updated = 0;
+        for (int from = 0; from < expired.size(); from += GIVE_UP_CHUNK_SIZE) {
+            final int to = Math.min(from + GIVE_UP_CHUNK_SIZE, expired.size());
+            final StringBuilder ids = new StringBuilder();
+            for (int i = from; i < to; i++) {
+                if (i > from) {
+                    ids.append(',');
+                }
+                ids.append(expired.get(i).longValue());
+            }
+
+            final String selection = PendingMessages.MSG_TYPE + "="
+                    + PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND
+                    + " AND " + PendingMessages.ERROR_TYPE + "<"
+                    + MmsSms.ERR_TYPE_GENERIC_PERMANENT
+                    + " AND " + PendingMessages.MSG_ID + " IN (" + ids + ")";
+            updated += SqliteWrapper.update(mContext, mContentResolver,
+                    PendingMessages.CONTENT_URI, values, selection, null);
+        }
+
+        ExternalLogger.i("[RetryScheduler] giveUpOnExpiredRetrievals() gave up on " + updated
+                + " of " + expired.size() + " expired notifications");
+        return updated;
+    }
+
+    /**
+     * Returns the ids of the M-Notification.ind whose expiry has passed.
+     *
+     * The expiry is stored as an absolute time in seconds, and is a mandatory header of an
+     * M-Notification.ind. A row without it is left alone, because there is nothing to judge it
+     * by.
+     */
+    private List<Long> getExpiredNotificationIds() {
+        final String selection = Mms.MESSAGE_TYPE + "="
+                + PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND
+                + " AND " + Mms.EXPIRY + ">0"
+                + " AND " + Mms.EXPIRY + "<=" + (System.currentTimeMillis() / 1000L);
+
+        final Cursor cursor = SqliteWrapper.query(mContext, mContentResolver, Mms.CONTENT_URI,
+                new String[] { Mms._ID }, selection, null, null);
+        if (cursor == null) {
+            ExternalLogger.w("[RetryScheduler] getExpiredNotificationIds() cursor is null");
+            return new ArrayList<>();
+        }
+        try {
+            final List<Long> result = new ArrayList<>(cursor.getCount());
+            final int columnIndexOfId = cursor.getColumnIndexOrThrow(Mms._ID);
+            while (cursor.moveToNext()) {
+                result.add(cursor.getLong(columnIndexOfId));
+            }
+            return result;
+        } finally {
+            cursor.close();
+        }
     }
 
     /**
