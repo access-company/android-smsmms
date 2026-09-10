@@ -101,7 +101,8 @@ public class DownloadManager {
             return false;
         }
 
-        final MmsDownloadReceiver receiver;
+        MmsDownloadReceiver receiver = null;
+        boolean scheduleRetryAlarm = false;
         synchronized (sLock) {
             if (mMap.get(location) != null) {
                 // The same message is already being downloaded, which happens when the MMSC
@@ -110,15 +111,24 @@ public class DownloadManager {
                 return false;
             }
             if (mMap.size() >= sMaxConnection.get()) {
-                deferDownload(location, uri, byPush, subscriptionId);
+                final boolean kept = deferDownload(location, uri, byPush, subscriptionId);
                 ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end1-3] too many downloads are in flight. deferred="
-                        + sDeferred.size());
-                return false;
+                        + sDeferred.size() + ", kept=" + kept);
+                // A download that is not kept anywhere is only picked up again by the pending
+                // message it was notified by, so make sure that one is looked at.
+                scheduleRetryAlarm = !kept;
+            } else {
+                // The connection is taken here, so that the checks above cannot interleave with
+                // another caller.
+                receiver = new MmsDownloadReceiver();
+                mMap.put(location, receiver);
             }
-            // The connection is taken here, so that the checks above cannot interleave with
-            // another caller.
-            receiver = new MmsDownloadReceiver();
-            mMap.put(location, receiver);
+        }
+        if (receiver == null) {
+            if (scheduleRetryAlarm) {
+                RetryScheduler.setRetryAlarm(context);
+            }
+            return false;
         }
 
         // Use unique action in order to avoid cancellation of notifying download result.
@@ -192,29 +202,33 @@ public class DownloadManager {
      *
      * Looking for a duplicate, checking the bound and adding the entry have to happen together,
      * or two callers can both add the same location or both find room at the bound.
+     *
+     * @return Whether the download is now waiting in the queue.
      */
-    private static void deferDownload(String location, Uri uri, boolean byPush, int subscriptionId) {
+    private static boolean deferDownload(String location, Uri uri, boolean byPush, int subscriptionId) {
         synchronized (sLock) {
             for (DeferredDownload deferred : sDeferred) {
                 if (location.equals(deferred.mLocation)) {
-                    return;
+                    return true;
                 }
             }
             if (sDeferred.size() >= MAX_DEFERRED_DOWNLOADS) {
                 ExternalLogger.w("[DownloadManager] deferDownload() too many deferred downloads. location=" + location);
-                return;
+                return false;
             }
             sDeferred.add(new DeferredDownload(location, uri, byPush, subscriptionId));
+            return true;
         }
     }
 
     /**
      * Starts the download that has been waiting the longest, if there is one.
      *
-     * An entry whose message is not in the mms provider any more, or whose message is already
-     * being downloaded, cannot be started and is dropped. Waiting for the next download to finish
-     * before the entries behind it are looked at would strand them, because the download that
-     * just finished may have been the last one, so they are tried until one of them starts.
+     * An entry whose message is not in the mms provider any more, whose message is already being
+     * downloaded, or whose notification has expired while it was waiting, cannot be started and is
+     * dropped. Waiting for the next download to finish before the entries behind it are looked at
+     * would strand them, because the download that just finished may have been the last one, so
+     * they are tried until one of them starts.
      */
     private static void startDeferredDownload(Context context) {
         while (!sDeferred.isEmpty() && mMap.size() < sMaxConnection.get()) {
@@ -227,6 +241,14 @@ public class DownloadManager {
             }
             ExternalLogger.i("[DownloadManager] startDeferredDownload() uri=" + deferred.mUri
                     + ", deferred=" + sDeferred.size());
+            if (isNotificationExpired(context, deferred.mLocation)) {
+                // The notification row is left in the mms provider when a retrieval is given up
+                // on, so the download would look startable. Retrieving it can no longer succeed,
+                // and taking a connection for it would hold up the entries behind it.
+                ExternalLogger.i("[DownloadManager] startDeferredDownload() the notification has expired. uri="
+                        + deferred.mUri);
+                continue;
+            }
             if (getInstance().downloadMultimediaMessage(context, deferred.mLocation, deferred.mUri,
                     deferred.mByPush, deferred.mSubscriptionId)) {
                 return;
@@ -298,6 +320,31 @@ public class DownloadManager {
     public static void finishDownload(Context context, String location) {
         finishDownload(location);
         startDeferredDownload(context);
+    }
+
+    /**
+     * Returns whether the expiry of the notification of a download has passed.
+     *
+     * The expiry is stored as an absolute time in seconds. A row without one is not reported as
+     * expired, because there is nothing to judge it by, and neither is a row that cannot be read.
+     */
+    private static boolean isNotificationExpired(Context context, String location) {
+        final String selection = Telephony.Mms.CONTENT_LOCATION + " = ?"
+                + " AND " + Telephony.Mms.EXPIRY + ">0"
+                + " AND " + Telephony.Mms.EXPIRY + "<=" + (System.currentTimeMillis() / 1000L);
+        final String[] selectionArgs = new String[] { location };
+        final Cursor c = SqliteWrapper.query(
+                context, context.getContentResolver(),
+                Telephony.Mms.CONTENT_URI, new String[] { Telephony.Mms._ID },
+                selection, selectionArgs, null);
+        if (c == null) {
+            return false;
+        }
+        try {
+            return c.getCount() > 0;
+        } finally {
+            c.close();
+        }
     }
 
     private static boolean isNotificationExist(Context context, String location) {
