@@ -48,6 +48,16 @@ public class RetryScheduler implements Observer {
     private static final boolean DEBUG = false;
     private static final boolean LOCAL_LOGV = false;
 
+    /**
+     * The shortest time to wait before a pending message is processed again.
+     *
+     * A pending message that has never been retried has a due time of 0, and a failure that is
+     * not counted as an attempt does not advance it. Without a lower bound the alarm would be
+     * scheduled in the past and fire at once, and since the pending messages are processed one at
+     * a time, the first of them would be retried in a loop and hold up all the others.
+     */
+    private static final long MIN_RETRY_INTERVAL_MS = 60 * 1000;
+
     private final Context mContext;
     private final ContentResolver mContentResolver;
 
@@ -342,6 +352,12 @@ public class RetryScheduler implements Observer {
                     // The result of getPendingMessages() is order by due time.
                     long retryAt = cursor.getLong(cursor.getColumnIndexOrThrow(
                             PendingMessages.DUE_TIME));
+                    final long now = System.currentTimeMillis();
+                    if (retryAt < now) {
+                        // Do not schedule the alarm in the past. See MIN_RETRY_INTERVAL_MS.
+                        ExternalLogger.i("[RetryScheduler] setRetryAlarm() the due time has passed. dueTime=" + retryAt);
+                        retryAt = now + MIN_RETRY_INTERVAL_MS;
+                    }
 
                     Intent service = new Intent(TransactionService.ACTION_ONALARM,
                                         null, context, TransactionService.class);
