@@ -30,7 +30,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Random;
 import java.util.UUID;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -43,6 +45,24 @@ public class DownloadManager {
     private static final ConcurrentHashMap<String, MmsDownloadReceiver> mMap = new ConcurrentHashMap<>();
     private static final AtomicInteger sMaxConnection = new AtomicInteger(5);
 
+    /**
+     * The downloads that could not be started because the maximum number of them was already in
+     * flight.
+     *
+     * A download that is never started reports no result, so nothing counts it as an attempt and
+     * nothing schedules it again. The only thing that would pick the message up is the pending
+     * message it was notified by, which is processed one at a time and can be far behind. The
+     * downloads are therefore kept here and started as soon as a connection is free.
+     */
+    private static final Queue<DeferredDownload> sDeferred = new ConcurrentLinkedQueue<>();
+
+    /**
+     * An upper bound on {@link #sDeferred}, so that a burst of notifications cannot make it grow
+     * without end. The pending message of a download that is dropped is still there, so the
+     * message is not lost.
+     */
+    private static final int MAX_DEFERRED_DOWNLOADS = 64;
+
     public static DownloadManager getInstance() {
         return ourInstance;
     }
@@ -51,17 +71,34 @@ public class DownloadManager {
 
     }
 
-    public void downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush, int subscriptionId) {
+    /**
+     * Asks the system to download a multimedia message.
+     *
+     * @return Whether the download was handed over to the system.
+     */
+    public boolean downloadMultimediaMessage(final Context context, final String location, Uri uri, boolean byPush, int subscriptionId) {
         ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [start] uri=" + uri + ", location=" + location + ", byPush=" + byPush);
-        if (location == null || mMap.get(location) != null || mMap.size() >= sMaxConnection.get()) {
-            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1]");
-            return;
+        if (location == null) {
+            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1-1] no content location");
+            return false;
+        }
+        if (mMap.get(location) != null) {
+            // The same message is already being downloaded, which happens when the MMSC notifies
+            // the device of it more than once.
+            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1-2] already downloading");
+            return false;
+        }
+        if (mMap.size() >= sMaxConnection.get()) {
+            deferDownload(location, uri, byPush, subscriptionId);
+            ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end1-3] too many downloads are in flight. deferred="
+                    + sDeferred.size());
+            return false;
         }
 
         // TransactionService can keep uri and location in memory while SmsManager download Mms.
         if (!isNotificationExist(context, location)) {
             ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end2]");
-            return;
+            return false;
         }
 
         MmsDownloadReceiver receiver = new MmsDownloadReceiver();
@@ -130,6 +167,52 @@ public class DownloadManager {
         grantUriPermission(context, contentUri);
         smsManager.downloadMultimediaMessage(context, location, contentUri, configOverrides, pendingIntent);
         ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end3]");
+        return true;
+    }
+
+    /**
+     * Keeps a download that could not be started, so that it can be started later.
+     */
+    private static void deferDownload(String location, Uri uri, boolean byPush, int subscriptionId) {
+        for (DeferredDownload deferred : sDeferred) {
+            if (location.equals(deferred.mLocation)) {
+                return;
+            }
+        }
+        if (sDeferred.size() >= MAX_DEFERRED_DOWNLOADS) {
+            ExternalLogger.w("[DownloadManager] deferDownload() too many deferred downloads. location=" + location);
+            return;
+        }
+        sDeferred.add(new DeferredDownload(location, uri, byPush, subscriptionId));
+    }
+
+    /**
+     * Starts the download that has been waiting the longest, if there is one.
+     */
+    private static void startDeferredDownload(Context context) {
+        final DeferredDownload deferred = sDeferred.poll();
+        if (deferred == null) {
+            return;
+        }
+        ExternalLogger.i("[DownloadManager] startDeferredDownload() uri=" + deferred.mUri
+                + ", deferred=" + sDeferred.size());
+        // A download that cannot be started yet is deferred again by the call below.
+        getInstance().downloadMultimediaMessage(context, deferred.mLocation, deferred.mUri,
+                deferred.mByPush, deferred.mSubscriptionId);
+    }
+
+    private static class DeferredDownload {
+        private final String mLocation;
+        private final Uri mUri;
+        private final boolean mByPush;
+        private final int mSubscriptionId;
+
+        DeferredDownload(String location, Uri uri, boolean byPush, int subscriptionId) {
+            mLocation = location;
+            mUri = uri;
+            mByPush = byPush;
+            mSubscriptionId = subscriptionId;
+        }
     }
 
     private void grantUriPermission(Context context, Uri contentUri) {
@@ -169,6 +252,17 @@ public class DownloadManager {
         if (location != null) {
             mMap.remove(location);
         }
+    }
+
+    /**
+     * Reports that a download has finished and starts the next one that is waiting.
+     *
+     * @param context A context, to start the next download with.
+     * @param location The content location of the download that has finished.
+     */
+    public static void finishDownload(Context context, String location) {
+        finishDownload(location);
+        startDeferredDownload(context);
     }
 
     private static boolean isNotificationExist(Context context, String location) {

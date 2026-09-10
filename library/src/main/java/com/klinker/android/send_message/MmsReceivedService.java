@@ -100,7 +100,7 @@ public class MmsReceivedService extends IntentService {
             }
 
             handleHttpError(this, intent);
-            DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
+            DownloadManager.finishDownload(this, intent.getStringExtra(EXTRA_LOCATION_URL));
         }
     }
 

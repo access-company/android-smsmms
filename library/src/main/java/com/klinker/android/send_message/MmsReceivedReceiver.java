@@ -169,7 +169,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 }
 
                 handleRetrieveFailure(context, intent, messageUri != null);
-                DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
+                DownloadManager.finishDownload(context, intent.getStringExtra(EXTRA_LOCATION_URL));
                 if (messageUri != null) {
                     onMessageReceived(context, messageUri);
                 }
