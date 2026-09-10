@@ -63,6 +63,16 @@ public class DownloadManager {
      */
     private static final int MAX_DEFERRED_DOWNLOADS = 64;
 
+    /**
+     * The lock that guards the decision to start, to skip or to defer a download.
+     *
+     * Deciding it reads {@link #mMap} and {@link #sDeferred} and then writes to one of them, and
+     * the callers run on more than one thread: a notification that has just arrived, the pending
+     * message the transaction service picked, and a download that has finished. Each collection
+     * is thread-safe on its own, but the decision as a whole has to be, too.
+     */
+    private static final Object sLock = new Object();
+
     public static DownloadManager getInstance() {
         return ourInstance;
     }
@@ -82,27 +92,34 @@ public class DownloadManager {
             ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1-1] no content location");
             return false;
         }
-        if (mMap.get(location) != null) {
-            // The same message is already being downloaded, which happens when the MMSC notifies
-            // the device of it more than once.
-            ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1-2] already downloading");
-            return false;
-        }
-        if (mMap.size() >= sMaxConnection.get()) {
-            deferDownload(location, uri, byPush, subscriptionId);
-            ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end1-3] too many downloads are in flight. deferred="
-                    + sDeferred.size());
-            return false;
-        }
 
         // TransactionService can keep uri and location in memory while SmsManager download Mms.
+        // This is checked before a connection is taken, so that a message that is not there any
+        // more is never deferred and no connection has to be given back.
         if (!isNotificationExist(context, location)) {
             ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end2]");
             return false;
         }
 
-        MmsDownloadReceiver receiver = new MmsDownloadReceiver();
-        mMap.put(location, receiver);
+        final MmsDownloadReceiver receiver;
+        synchronized (sLock) {
+            if (mMap.get(location) != null) {
+                // The same message is already being downloaded, which happens when the MMSC
+                // notifies the device of it more than once.
+                ExternalLogger.d("[DownloadManager] downloadMultimediaMessage() [end1-2] already downloading");
+                return false;
+            }
+            if (mMap.size() >= sMaxConnection.get()) {
+                deferDownload(location, uri, byPush, subscriptionId);
+                ExternalLogger.i("[DownloadManager] downloadMultimediaMessage() [end1-3] too many downloads are in flight. deferred="
+                        + sDeferred.size());
+                return false;
+            }
+            // The connection is taken here, so that the checks above cannot interleave with
+            // another caller.
+            receiver = new MmsDownloadReceiver();
+            mMap.put(location, receiver);
+        }
 
         // Use unique action in order to avoid cancellation of notifying download result.
         // If targetSdkVersion is 34, Runtime-registered broadcasts receivers must specify export behavior
@@ -172,33 +189,51 @@ public class DownloadManager {
 
     /**
      * Keeps a download that could not be started, so that it can be started later.
+     *
+     * Looking for a duplicate, checking the bound and adding the entry have to happen together,
+     * or two callers can both add the same location or both find room at the bound.
      */
     private static void deferDownload(String location, Uri uri, boolean byPush, int subscriptionId) {
-        for (DeferredDownload deferred : sDeferred) {
-            if (location.equals(deferred.mLocation)) {
+        synchronized (sLock) {
+            for (DeferredDownload deferred : sDeferred) {
+                if (location.equals(deferred.mLocation)) {
+                    return;
+                }
+            }
+            if (sDeferred.size() >= MAX_DEFERRED_DOWNLOADS) {
+                ExternalLogger.w("[DownloadManager] deferDownload() too many deferred downloads. location=" + location);
                 return;
             }
+            sDeferred.add(new DeferredDownload(location, uri, byPush, subscriptionId));
         }
-        if (sDeferred.size() >= MAX_DEFERRED_DOWNLOADS) {
-            ExternalLogger.w("[DownloadManager] deferDownload() too many deferred downloads. location=" + location);
-            return;
-        }
-        sDeferred.add(new DeferredDownload(location, uri, byPush, subscriptionId));
     }
 
     /**
      * Starts the download that has been waiting the longest, if there is one.
+     *
+     * An entry whose message is not in the mms provider any more, or whose message is already
+     * being downloaded, cannot be started and is dropped. Waiting for the next download to finish
+     * before the entries behind it are looked at would strand them, because the download that
+     * just finished may have been the last one, so they are tried until one of them starts.
      */
     private static void startDeferredDownload(Context context) {
-        final DeferredDownload deferred = sDeferred.poll();
-        if (deferred == null) {
-            return;
+        while (!sDeferred.isEmpty() && mMap.size() < sMaxConnection.get()) {
+            final DeferredDownload deferred;
+            synchronized (sLock) {
+                deferred = sDeferred.poll();
+            }
+            if (deferred == null) {
+                return;
+            }
+            ExternalLogger.i("[DownloadManager] startDeferredDownload() uri=" + deferred.mUri
+                    + ", deferred=" + sDeferred.size());
+            if (getInstance().downloadMultimediaMessage(context, deferred.mLocation, deferred.mUri,
+                    deferred.mByPush, deferred.mSubscriptionId)) {
+                return;
+            }
+            // An entry that is only waiting for a free connection is deferred again by the call
+            // above, and the condition of this loop then ends it.
         }
-        ExternalLogger.i("[DownloadManager] startDeferredDownload() uri=" + deferred.mUri
-                + ", deferred=" + sDeferred.size());
-        // A download that cannot be started yet is deferred again by the call below.
-        getInstance().downloadMultimediaMessage(context, deferred.mLocation, deferred.mUri,
-                deferred.mByPush, deferred.mSubscriptionId);
     }
 
     private static class DeferredDownload {
