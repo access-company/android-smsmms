@@ -47,6 +47,12 @@ import com.klinker.android.send_message.Transaction;
 public class DownloadRequest extends MmsRequest {
     private static final String TAG = "DownloadRequest";
 
+    /**
+     * The value {@link RetrieveConf#getRetrieveStatus()} reads when the message carries no
+     * X-Mms-Retrieve-Status header.
+     */
+    private static final int RETRIEVE_STATUS_ABSENT = 0;
+
     private static final String LOCATION_SELECTION =
             Telephony.Mms.MESSAGE_TYPE + "=? AND " + Telephony.Mms.CONTENT_LOCATION + " =?";
 
@@ -156,7 +162,9 @@ public class DownloadRequest extends MmsRequest {
             }
             final RetrieveConf retrieveConf = (RetrieveConf) pdu;
             final int status = retrieveConf.getRetrieveStatus();
-            if (status != PduHeaders.RETRIEVE_STATUS_OK) {
+            // X-Mms-Retrieve-Status is optional and is only sent to report a failure. A header
+            // that is not there reads as 0, which means the message was retrieved just fine.
+            if (status != RETRIEVE_STATUS_ABSENT && status != PduHeaders.RETRIEVE_STATUS_OK) {
                 Log.e(TAG, "DownloadRequest.persistIfRequired: retrieve failed " + status);
                 // Update the retrieve status of the NotificationInd. The row is kept so that the
                 // message can be downloaded again.

@@ -43,10 +43,23 @@ import com.klinker.android.logger.Log;
 import com.klinker.android.send_message.BroadcastUtils;
 import com.klinker.android.send_message.R;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class RetryScheduler implements Observer {
     private static final String TAG = LogTag.TAG;
     private static final boolean DEBUG = false;
     private static final boolean LOCAL_LOGV = false;
+
+    /**
+     * The shortest time to wait before a pending message is processed again.
+     *
+     * A pending message that has never been retried has a due time of 0, and a failure that is
+     * not counted as an attempt does not advance it. Without a lower bound the alarm would be
+     * scheduled in the past and fire at once, and since the pending messages are processed one at
+     * a time, the first of them would be retried in a loop and hold up all the others.
+     */
+    private static final long MIN_RETRY_INTERVAL_MS = 60 * 1000;
 
     private final Context mContext;
     private final ContentResolver mContentResolver;
@@ -107,6 +120,139 @@ public class RetryScheduler implements Observer {
             }
         }
         ExternalLogger.i("[RetryScheduler] update() [end]");
+    }
+
+    /**
+     * The number of message ids that are put in one selection when the pending messages are
+     * updated in bulk.
+     */
+    private static final int GIVE_UP_CHUNK_SIZE = 200;
+
+    /**
+     * Gives up on the pending retrievals whose notification has expired.
+     *
+     * The MMSC does not keep a message past the expiry the M-Notification.ind reports, so
+     * retrieving it can never succeed again. Such a notification would otherwise be retried
+     * forever, and since the pending messages are processed one at a time, a backlog of them
+     * holds up the retrieval of the messages that did just arrive.
+     *
+     * The pending messages are marked with a permanent error instead of being removed, which is
+     * how a retrieval that is given up on is reported. The M-Notification.ind itself is left in
+     * the mms provider.
+     *
+     * @return The number of pending messages that were given up on.
+     */
+    public int giveUpOnExpiredRetrievals() {
+        final List<Long> expired = getExpiredNotificationIds();
+        if (expired.isEmpty()) {
+            return 0;
+        }
+
+        final ContentValues values = new ContentValues(1);
+        values.put(PendingMessages.ERROR_TYPE, MmsSms.ERR_TYPE_MMS_PROTO_PERMANENT);
+
+        int updated = 0;
+        for (int from = 0; from < expired.size(); from += GIVE_UP_CHUNK_SIZE) {
+            final int to = Math.min(from + GIVE_UP_CHUNK_SIZE, expired.size());
+            final StringBuilder ids = new StringBuilder();
+            for (int i = from; i < to; i++) {
+                if (i > from) {
+                    ids.append(',');
+                }
+                ids.append(expired.get(i).longValue());
+            }
+
+            final String selection = PendingMessages.MSG_TYPE + "="
+                    + PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND
+                    + " AND " + PendingMessages.ERROR_TYPE + "<"
+                    + MmsSms.ERR_TYPE_GENERIC_PERMANENT
+                    + " AND " + PendingMessages.MSG_ID + " IN (" + ids + ")";
+            updated += SqliteWrapper.update(mContext, mContentResolver,
+                    PendingMessages.CONTENT_URI, values, selection, null);
+        }
+
+        ExternalLogger.i("[RetryScheduler] giveUpOnExpiredRetrievals() gave up on " + updated
+                + " of " + expired.size() + " expired notifications");
+        return updated;
+    }
+
+    /**
+     * Returns the ids of the M-Notification.ind whose expiry has passed.
+     *
+     * The expiry is stored as an absolute time in seconds, and is a mandatory header of an
+     * M-Notification.ind. A row without it is left alone, because there is nothing to judge it
+     * by.
+     */
+    private List<Long> getExpiredNotificationIds() {
+        final String selection = Mms.MESSAGE_TYPE + "="
+                + PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND
+                + " AND " + Mms.EXPIRY + ">0"
+                + " AND " + Mms.EXPIRY + "<=" + (System.currentTimeMillis() / 1000L);
+
+        final Cursor cursor = SqliteWrapper.query(mContext, mContentResolver, Mms.CONTENT_URI,
+                new String[] { Mms._ID }, selection, null, null);
+        if (cursor == null) {
+            ExternalLogger.w("[RetryScheduler] getExpiredNotificationIds() cursor is null");
+            return new ArrayList<>();
+        }
+        try {
+            final List<Long> result = new ArrayList<>(cursor.getCount());
+            final int columnIndexOfId = cursor.getColumnIndexOrThrow(Mms._ID);
+            while (cursor.moveToNext()) {
+                result.add(cursor.getLong(columnIndexOfId));
+            }
+            return result;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * Puts off the next attempt of a pending message without counting it as an attempt.
+     *
+     * Use this when the message could not be retrieved for a reason that is caused by the
+     * environment rather than by the message itself. The retry count and the error type are left
+     * alone, so the message is never given up on, but the due time is advanced so that the same
+     * message is not retried at once and the other pending messages get their turn.
+     *
+     * @param uri The uri of the message in the mms provider.
+     */
+    public void postponeRetry(Uri uri) {
+        final long msgId = ContentUris.parseId(uri);
+        ExternalLogger.i("[RetryScheduler] postponeRetry() [start] messageId=" + msgId + ", uri=" + uri);
+
+        final Uri.Builder uriBuilder = PendingMessages.CONTENT_URI.buildUpon();
+        uriBuilder.appendQueryParameter("protocol", "mms");
+        uriBuilder.appendQueryParameter("message", String.valueOf(msgId));
+
+        final Cursor cursor = SqliteWrapper.query(mContext, mContentResolver,
+                uriBuilder.build(), null, null, null, null);
+        if (cursor == null) {
+            ExternalLogger.w("[RetryScheduler] postponeRetry() [end1] cursor is null");
+            return;
+        }
+        try {
+            if ((cursor.getCount() != 1) || !cursor.moveToFirst()) {
+                ExternalLogger.w("[RetryScheduler] postponeRetry() [end2] cannot find the pending status. count=" + cursor.getCount());
+                return;
+            }
+
+            final long current = System.currentTimeMillis();
+            final ContentValues values = new ContentValues(2);
+            values.put(PendingMessages.DUE_TIME, current + MIN_RETRY_INTERVAL_MS);
+            values.put(PendingMessages.LAST_TRY, current);
+
+            final long id = cursor.getLong(cursor.getColumnIndexOrThrow(PendingMessages._ID));
+            SqliteWrapper.update(mContext, mContentResolver, PendingMessages.CONTENT_URI,
+                    values, PendingMessages._ID + "=" + id, null);
+            ExternalLogger.i("[RetryScheduler] postponeRetry() put off by " + MIN_RETRY_INTERVAL_MS
+                    + "ms. messageId=" + msgId + ", pendingId=" + id);
+        } finally {
+            cursor.close();
+        }
+
+        setRetryAlarm(mContext);
+        ExternalLogger.i("[RetryScheduler] postponeRetry() [end]");
     }
 
     public void scheduleRetry(Uri uri) {
@@ -342,6 +488,12 @@ public class RetryScheduler implements Observer {
                     // The result of getPendingMessages() is order by due time.
                     long retryAt = cursor.getLong(cursor.getColumnIndexOrThrow(
                             PendingMessages.DUE_TIME));
+                    final long now = System.currentTimeMillis();
+                    if (retryAt < now) {
+                        // Do not schedule the alarm in the past. See MIN_RETRY_INTERVAL_MS.
+                        ExternalLogger.i("[RetryScheduler] setRetryAlarm() the due time has passed. dueTime=" + retryAt);
+                        retryAt = now + MIN_RETRY_INTERVAL_MS;
+                    }
 
                     Intent service = new Intent(TransactionService.ACTION_ONALARM,
                                         null, context, TransactionService.class);

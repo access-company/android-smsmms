@@ -296,6 +296,10 @@ public class TransactionService extends Service implements Observer {
         ExternalLogger.d("[TransactionService] onNewIntent() action=" + action + ", networkAvailable=" + !noNetwork);
         if (ACTION_ONALARM.equals(action) || ACTION_ENABLE_AUTO_RETRIEVE.equals(action) ||
                 (intent.getExtras() == null)) {
+            // An expired notification can never be retrieved again. Give up on it first, so that
+            // a backlog of them does not hold up the messages that can still be retrieved.
+            RetryScheduler.getInstance(this).giveUpOnExpiredRetrievals();
+
             // Scan database to find all pending operations.
             Cursor cursor = PduPersister.getPduPersister(this).getPendingMessages(
                     System.currentTimeMillis());

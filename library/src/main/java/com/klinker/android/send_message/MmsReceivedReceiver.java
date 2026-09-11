@@ -169,7 +169,7 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 }
 
                 handleRetrieveFailure(context, intent, messageUri != null);
-                DownloadManager.finishDownload(intent.getStringExtra(EXTRA_LOCATION_URL));
+                DownloadManager.finishDownload(context, intent.getStringExtra(EXTRA_LOCATION_URL));
                 if (messageUri != null) {
                     onMessageReceived(context, messageUri);
                 }
@@ -228,8 +228,11 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 // Sometimes MMS can not be acquired if Wifi is enabled.
                 // For example, if you are playing Youtube in the foreground.
                 // The failure is caused by the environment, so it is not counted as an attempt.
+                // The due time is still put off, because leaving it alone makes this message be
+                // retried at once and hold up every other pending message.
                 ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() the download failed while Wi-Fi is active, so it is not counted. resultCode="
                         + resultCode + ", uri=" + uri);
+                RetryScheduler.getInstance(context).postponeRetry(uri);
                 return;
             }
             ExternalLogger.w("[MmsReceivedReceiver] handleRetrieveFailure() schedule retry. the download failed. resultCode="
