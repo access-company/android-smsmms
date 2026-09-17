@@ -42,6 +42,8 @@ import android.provider.Telephony.MmsSms.PendingMessages;
 import android.text.TextUtils;
 import android.widget.Toast;
 
+import java.lang.reflect.Method;
+
 import com.android.mms.logs.LogTag;
 import com.android.mms.service_alt.DownloadRequest;
 import com.android.mms.service_alt.MmsNetworkManager;
@@ -699,7 +701,7 @@ public class TransactionService extends Service implements Observer {
             }
         }
 
-        int result = mConnMgr.startUsingNetworkFeature(
+        int result = callStartUsingNetworkFeature(
                 ConnectivityManager.TYPE_MOBILE, "enableMMS");
 
         if (Log.isLoggable(LogTag.TRANSACTION, Log.VERBOSE)) {
@@ -725,12 +727,35 @@ public class TransactionService extends Service implements Observer {
             // cancel timer for renewal of lease
             mServiceHandler.removeMessages(EVENT_CONTINUE_MMS_CONNECTIVITY);
             if (mConnMgr != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-                mConnMgr.stopUsingNetworkFeature(
+                callStopUsingNetworkFeature(
                         ConnectivityManager.TYPE_MOBILE,
                         "enableMMS");
             }
         } finally {
             releaseWakeLock();
+        }
+    }
+
+    // ConnectivityManager#startUsingNetworkFeature/#stopUsingNetworkFeature were removed from
+    // the public SDK surface, but the framework implementation is still present on the device
+    // versions this service targets. Call them reflectively so the module keeps compiling
+    // against newer compileSdk versions without changing runtime behavior.
+    private int callStartUsingNetworkFeature(int networkType, String feature) {
+        try {
+            Method method = ConnectivityManager.class.getMethod(
+                    "startUsingNetworkFeature", int.class, String.class);
+            return (int) method.invoke(mConnMgr, networkType, feature);
+        } catch (ReflectiveOperationException e) {
+            return -1;
+        }
+    }
+
+    private void callStopUsingNetworkFeature(int networkType, String feature) {
+        try {
+            Method method = ConnectivityManager.class.getMethod(
+                    "stopUsingNetworkFeature", int.class, String.class);
+            method.invoke(mConnMgr, networkType, feature);
+        } catch (ReflectiveOperationException ignored) {
         }
     }
 
