@@ -42,6 +42,7 @@ import android.provider.Telephony.MmsSms.PendingMessages;
 import android.text.TextUtils;
 import android.widget.Toast;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import com.android.mms.logs.LogTag;
@@ -745,7 +746,9 @@ public class TransactionService extends Service implements Observer {
             Method method = ConnectivityManager.class.getMethod(
                     "startUsingNetworkFeature", int.class, String.class);
             return (int) method.invoke(mConnMgr, networkType, feature);
-        } catch (ReflectiveOperationException e) {
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            // ReflectiveOperationException is API 19+; catch the pre-19 exception types
+            // individually so this still resolves on the minSdk 14 target.
             return -1;
         }
     }
@@ -755,7 +758,7 @@ public class TransactionService extends Service implements Observer {
             Method method = ConnectivityManager.class.getMethod(
                     "stopUsingNetworkFeature", int.class, String.class);
             method.invoke(mConnMgr, networkType, feature);
-        } catch (ReflectiveOperationException ignored) {
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException ignored) {
         }
     }
 
