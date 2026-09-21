@@ -1,9 +1,5 @@
 apply plugin: 'com.android.library'
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     implementation 'com.klinkerapps:logger:1.0.3'
     implementation 'com.squareup.okhttp:okhttp:2.5.0'
@@ -11,16 +7,15 @@ dependencies {
 }
 
 android {
-    namespace 'com.klinker.android.send_message'
-    compileSdkVersion 25
+    namespace = 'com.klinker.android.send_message'
+    compileSdk = 36
 
     defaultConfig {
-        minSdkVersion 14
-        targetSdkVersion 25
+        minSdk = 14
     }
 
-    lintOptions {
-        abortOnError false
+    lint {
+        abortOnError = false
     }
 
     useLibrary 'org.apache.http.legacy'
